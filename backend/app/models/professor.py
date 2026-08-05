@@ -14,9 +14,6 @@ class Professor(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     department: Mapped[str] = mapped_column(String(128), nullable=False)
-    semester_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("semesters.id"), nullable=False, index=True
-    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -54,9 +54,8 @@ def get_task(task_id: str) -> dict:
 
 def _build_course_inputs(
     db: Session,
-    semester_id: int,
 ) -> list[CourseInput]:
-    courses = db.query(Course).filter(Course.semester_id == semester_id).all()
+    courses = db.query(Course).all()
     result = []
     for c in courses:
         result.append(
@@ -94,14 +93,12 @@ def _build_room_inputs(db: Session) -> list[RoomInput]:
 def _persist_results(
     db: Session,
     task_id: str,
-    semester_id: int,
     results: list,
 ) -> list[Timetable]:
     """Save algorithm results to DB as CANDIDATE timetables."""
     saved = []
     for rank, result in enumerate(results, start=1):
         tt = Timetable(
-            semester_id=semester_id,
             name=f"추천안 {rank}",
             status="CANDIDATE",
             version=1,
@@ -133,7 +130,6 @@ def _persist_results(
 async def run_generation_async(
     db_factory,  # callable -> Session
     task_id: str,
-    semester_id: int,
     min_candidates: int,
 ) -> None:
     """
@@ -145,7 +141,7 @@ async def run_generation_async(
     def _worker():
         db: Session = db_factory()
         try:
-            course_inputs = _build_course_inputs(db, semester_id)
+            course_inputs = _build_course_inputs(db)
             room_inputs = _build_room_inputs(db)
 
             if not course_inputs:
@@ -165,7 +161,7 @@ async def run_generation_async(
                 _tasks[task_id]["error"] = "제약조건을 모두 만족하는 시간표 생성 불가"
                 return
 
-            saved = _persist_results(db, task_id, semester_id, results)
+            saved = _persist_results(db, task_id, results)
             _tasks[task_id]["status"] = TASK_COMPLETED
             _tasks[task_id]["candidates"] = [t.id for t in saved]
 
@@ -180,10 +176,10 @@ async def run_generation_async(
 
 # ── Candidate queries ──────────────────────────────────────────────────────────
 
-def list_candidates(db: Session, semester_id: int) -> list[Timetable]:
+def list_candidates(db: Session) -> list[Timetable]:
     return (
         db.query(Timetable)
-        .filter(Timetable.semester_id == semester_id, Timetable.status == "CANDIDATE")
+        .filter(Timetable.status == "CANDIDATE")
         .order_by(Timetable.rank)
         .all()
     )
@@ -334,23 +330,22 @@ def confirm_timetable(db: Session, timetable_id: int) -> Timetable:
 
 def get_timetable_view(
     db: Session,
-    semester_id: int,
-    view_type: str,
-    target_name: str | None,
-) -> list[dict]:
+    type: str,
+    target_name: str | None = None,
+) -> dict:
     """
-    Return a list of assignment dicts filtered by view_type.
-    view_type: room | professor | grade | department
+    Get a structured view of CONFIRMED timetables.
+    type: "room" | "professor" | "grade" | "department"
     """
-    timetables = (
+    confirmed = (
         db.query(Timetable)
-        .filter(Timetable.semester_id == semester_id, Timetable.status == "CONFIRMED")
+        .filter(Timetable.status == "CONFIRMED")
         .all()
     )
-    if not timetables:
+    if not confirmed:
         return []
 
-    tt_ids = [t.id for t in timetables]
+    tt_ids = [t.id for t in confirmed]
     assignments = (
         db.query(Assignment).filter(Assignment.timetable_id.in_(tt_ids)).all()
     )
@@ -377,16 +372,16 @@ def get_timetable_view(
             "target_grade": course.target_grade if course else None,
         }
 
-        if view_type == "room" and target_name and room:
+        if type == "room" and target_name and room:
             if room.room_name != target_name:
                 continue
-        elif view_type == "professor" and target_name and prof:
+        elif type == "professor" and target_name and prof:
             if prof.name != target_name:
                 continue
-        elif view_type == "grade" and target_name and course:
+        elif type == "grade" and target_name and course:
             if str(course.target_grade) != target_name:
                 continue
-        elif view_type == "department" and target_name and course:
+        elif type == "department" and target_name and course:
             if course.department != target_name:
                 continue
 

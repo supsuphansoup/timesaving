@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 # ── Generate ──────────────────────────────────────────────────────────────────
 
 class GenerateRequest(BaseModel):
-    semester_id: int
     min_candidates: int = Field(default=3, ge=1, le=10)
 
 
@@ -25,7 +24,6 @@ class TaskStatusResponse(BaseModel):
 
 class CandidateOut(BaseModel):
     id: int
-    semester_id: int
     task_id: str | None
     rank: int
     score: float
@@ -87,7 +85,6 @@ class DraftRequest(BaseModel):
 
 class TimetableOut(BaseModel):
     id: int
-    semester_id: int
     name: str | None
     status: str
     version: int

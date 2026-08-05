@@ -13,11 +13,10 @@ router = APIRouter(prefix="/api/v1/professors", tags=["교수 관리"])
 
 @router.get("")
 def list_professors(
-    semester_id: int,
     db: Session = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    professors = professor_service.list_professors(db, semester_id)
+    professors = professor_service.list_professors(db)
     return success_response(data=[ProfessorOut.model_validate(p).model_dump() for p in professors])
 
 

@@ -12,7 +12,6 @@ class Timetable(Base):
     __tablename__ = "timetables"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    semester_id: Mapped[int] = mapped_column(Integer, ForeignKey("semesters.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=True)
 
     # Status: CANDIDATE | DRAFT | CONFIRMED

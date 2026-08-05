@@ -12,7 +12,6 @@ class CourseCreate(BaseModel):
     weekly_hours: int = Field(default=3, ge=1, le=9)
     expected_students: int = Field(..., ge=1)
     requires_computer: bool = False
-    semester_id: int
 
     # ── Scheduling constraints (hard) ────────────────────────────────────────
     # Allowed values for days: "MON" | "TUE" | "WED" | "THU" | "FRI"
@@ -55,7 +54,6 @@ class CourseOut(BaseModel):
     weekly_hours: int
     expected_students: int
     requires_computer: bool
-    semester_id: int
 
     unavailable_days: list[str]
     unavailable_periods: list[int]

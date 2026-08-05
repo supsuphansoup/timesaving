@@ -5,8 +5,8 @@ from app.models.professor import Professor
 from app.schemas.professor import ProfessorCreate, ProfessorUpdate
 
 
-def list_professors(db: Session, semester_id: int) -> list[Professor]:
-    return db.query(Professor).filter(Professor.semester_id == semester_id).all()
+def list_professors(db: Session) -> list[Professor]:
+    return db.query(Professor).all()
 
 
 def get_professor(db: Session, professor_id: int) -> Professor:
@@ -20,7 +20,7 @@ def create_professor(db: Session, data: ProfessorCreate) -> Professor:
     # ER-08: duplicate check
     existing = (
         db.query(Professor)
-        .filter(Professor.name == data.name, Professor.semester_id == data.semester_id)
+        .filter(Professor.name == data.name)
         .first()
     )
     if existing:

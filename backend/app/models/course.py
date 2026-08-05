@@ -28,9 +28,6 @@ class Course(Base):
     weekly_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     expected_students: Mapped[int] = mapped_column(Integer, nullable=False)
     requires_computer: Mapped[bool] = mapped_column(Boolean, default=False)
-    semester_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("semesters.id"), nullable=False, index=True
-    )
 
     # ── Scheduling constraints (hard) ────────────────────────────────────────
     # Days the course cannot be scheduled  e.g. ["MON", "FRI"]

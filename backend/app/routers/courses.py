@@ -12,11 +12,10 @@ router = APIRouter(prefix="/api/v1/courses", tags=["강의 관리"])
 
 @router.get("")
 def list_courses(
-    semester_id: int,
     db: Session = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    courses = course_service.list_courses(db, semester_id)
+    courses = course_service.list_courses(db)
     return success_response(data=[CourseOut.model_validate(c).model_dump() for c in courses])
 
 
@@ -49,3 +48,12 @@ def delete_course(
 ):
     course_service.delete_course(db, course_id)
     return success_response(message="강의 정보가 삭제되었습니다.")
+
+
+@router.delete("/action/reset")
+def reset_courses(
+    db: Session = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    course_service.reset_all_courses(db)
+    return success_response(message="모든 강의 및 시간표 정보가 초기화되었습니다.")

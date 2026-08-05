@@ -39,8 +39,7 @@ async def generate_timetable(
         Log(
             log_type="GENERATE",
             user_id=current_user["user_id"],
-            username=current_user["username"],
-            detail={"task_id": task_id, "semester_id": body.semester_id},
+            detail={"task_id": task_id},
         )
     )
     db.commit()
@@ -51,7 +50,6 @@ async def generate_timetable(
         timetable_service.run_generation_async,
         db_factory=SessionLocal,
         task_id=task_id,
-        semester_id=body.semester_id,
         min_candidates=body.min_candidates,
     )
 
@@ -87,12 +85,11 @@ def get_task_status(
 
 @router.get("/candidates")
 def list_candidates(
-    semester_id: int,
     db: Session = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
     """추천안 목록 조회."""
-    candidates = timetable_service.list_candidates(db, semester_id)
+    candidates = timetable_service.list_candidates(db)
     return success_response(data=[CandidateOut.model_validate(c).model_dump() for c in candidates])
 
 
@@ -100,14 +97,13 @@ def list_candidates(
 
 @router.get("/views")
 def get_timetable_view(
-    semester_id: int,
     type: str = "room",
     target_name: str | None = None,
     db: Session = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
     """조건별 시간표 조회 (강의실/교수/학년/학과)."""
-    data = timetable_service.get_timetable_view(db, semester_id, type, target_name)
+    data = timetable_service.get_timetable_view(db, type, target_name)
     return success_response(data=data)
 
 
@@ -161,7 +157,6 @@ async def partial_reassign(
         timetable_service.run_generation_async(
             db_factory=SessionLocal,
             task_id=task_id,
-            semester_id=tt.semester_id,
             min_candidates=1,
         ),
     )
