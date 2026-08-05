@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.venv/
+env/
+ENV/
+
+# Production / Build
+dist/
+**/dist/
+build/
+*.egg-info/
+
+# Python cache & Environment
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.env
+.env.local
+
+# Database (optional - un-comment if you don't want to track sqlite db)
+# *.db
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
