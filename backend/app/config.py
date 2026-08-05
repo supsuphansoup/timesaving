@@ -1,8 +1,21 @@
-import os
+from pydantic_settings import BaseSettings
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'dongseo_timetable.db')}")
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dongseo_university_ta_secret_key_2026_super_secure")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day session
+class Settings(BaseSettings):
+    database_url: str = "sqlite:///./timesaving.db"
+    secret_key: str = "change-me-to-a-long-random-string-in-production"
+    session_max_age: int = 86400
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:8001"
+    init_admin_username: str = "admin"
+    init_admin_password: str = "admin1234"
+    algorithm_timeout_seconds: int = 120
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",")]
+
+    class Config:
+        env_file = ".env"
+
+
+settings = Settings()

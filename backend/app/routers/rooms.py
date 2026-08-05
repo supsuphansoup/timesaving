@@ -1,119 +1,50 @@
-import json
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import Room, AuditLog, User
-from ..schemas import RoomCreate, RoomUpdate, RoomResponse
-from .auth import get_current_user
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.response import success_response
+from app.schemas.room import RoomCreate, RoomOut, RoomUpdate
+from app.services import room_service
 
-router = APIRouter(prefix="/api/rooms", tags=["rooms"])
+router = APIRouter(prefix="/api/v1/rooms", tags=["강의실 관리"])
 
-def room_to_response(r: Room) -> dict:
-    return {
-        "id": r.id,
-        "name": r.name,
-        "building": r.building,
-        "capacity": r.capacity,
-        "is_computer_lab": r.is_computer_lab,
-        "is_common": r.is_common,
-        "available_hours": json.loads(r.available_hours or "[]"),
-        "unavailable_hours": json.loads(r.unavailable_hours or "[]"),
-        "notes": r.notes
-    }
 
-@router.get("", response_model=List[RoomResponse])
+@router.get("")
 def list_rooms(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: dict = Depends(get_current_user),
 ):
-    rooms = db.query(Room).all()
-    return [room_to_response(r) for r in rooms]
+    rooms = room_service.list_rooms(db)
+    return success_response(data=[RoomOut.model_validate(r).model_dump() for r in rooms])
 
-@router.post("", response_model=RoomResponse)
+
+@router.post("")
 def create_room(
-    req: RoomCreate,
+    body: RoomCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: dict = Depends(get_current_user),
 ):
-    room = Room(
-        name=req.name,
-        building=req.building,
-        capacity=req.capacity,
-        is_computer_lab=req.is_computer_lab,
-        is_common=req.is_common,
-        available_hours=json.dumps(req.available_hours),
-        unavailable_hours=json.dumps(req.unavailable_hours),
-        notes=req.notes
-    )
-    db.add(room)
-    db.commit()
-    db.refresh(room)
+    room = room_service.create_room(db, body)
+    return success_response(data=RoomOut.model_validate(room).model_dump(), status_code=201)
 
-    log = AuditLog(
-        username=current_user.username,
-        category="UPDATE",
-        message=f"강의실 추가 ({room.building} {room.name})"
-    )
-    db.add(log)
-    db.commit()
 
-    return room_to_response(room)
-
-@router.put("/{room_id}", response_model=RoomResponse)
+@router.put("/{room_id}")
 def update_room(
     room_id: int,
-    req: RoomUpdate,
+    body: RoomUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: dict = Depends(get_current_user),
 ):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail="강의실을 찾을 수 없습니다.")
+    room = room_service.update_room(db, room_id, body)
+    return success_response(data=RoomOut.model_validate(room).model_dump())
 
-    room.name = req.name
-    room.building = req.building
-    room.capacity = req.capacity
-    room.is_computer_lab = req.is_computer_lab
-    room.is_common = req.is_common
-    room.available_hours = json.dumps(req.available_hours)
-    room.unavailable_hours = json.dumps(req.unavailable_hours)
-    room.notes = req.notes
 
-    db.commit()
-    db.refresh(room)
-
-    log = AuditLog(
-        username=current_user.username,
-        category="UPDATE",
-        message=f"강의실 정보 수정 ({room.name})"
-    )
-    db.add(log)
-    db.commit()
-
-    return room_to_response(room)
-
-@router.delete("/{room_id}", response_model=dict)
+@router.delete("/{room_id}")
 def delete_room(
     room_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: dict = Depends(get_current_user),
 ):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail="강의실을 찾을 수 없습니다.")
-
-    name = room.name
-    db.delete(room)
-    db.commit()
-
-    log = AuditLog(
-        username=current_user.username,
-        category="UPDATE",
-        message=f"강의실 삭제 ({name})"
-    )
-    db.add(log)
-    db.commit()
-
-    return {"message": f"{name} 강의실이 삭제되었습니다."}
+    room_service.delete_room(db, room_id)
+    return success_response(message="강의실 정보가 삭제되었습니다.")

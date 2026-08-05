@@ -1,1 +1,1 @@
-# Dongseo Timetable System Backend Package
+# app package

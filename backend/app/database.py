@@ -1,14 +1,21 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from .config import DATABASE_URL
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+from app.config import settings
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# SQLite requires connect_args for thread safety; ignored for other DBs
+connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+
+engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+class Base(DeclarativeBase):
+    pass
+
 
 def get_db():
+    """FastAPI dependency that yields a DB session and ensures it is closed."""
     db = SessionLocal()
     try:
         yield db

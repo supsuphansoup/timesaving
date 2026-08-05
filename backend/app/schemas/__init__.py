@@ -1,1 +1,1 @@
-from .all_schemas import *
+# schemas package
