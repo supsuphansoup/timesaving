@@ -14,6 +14,9 @@ interface TimetableGridProps {
 }
 
 const DAYS = ['월', '화', '수', '목', '금'];
+const DAY_MAP: Record<string, string> = { '월': 'MON', '화': 'TUE', '수': 'WED', '목': 'THU', '금': 'FRI' };
+const REV_DAY_MAP: Record<string, string> = { 'MON': '월', 'TUE': '화', 'WED': '수', 'THU': '목', 'FRI': '금' };
+
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 const PERIOD_TIMES = [
@@ -59,10 +62,79 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
     return COLOR_PALETTE[courseId % COLOR_PALETTE.length];
   };
 
+  const handleDragStart = (e: React.DragEvent, assignment: Assignment) => {
+    if (readOnly) return;
+    e.dataTransfer.setData('application/json', JSON.stringify(assignment));
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (readOnly) return;
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetDay: string, targetPeriod: number) => {
+    if (readOnly || !candidateId) return;
+    e.preventDefault();
+    
+    const data = e.dataTransfer.getData('application/json');
+    if (!data) return;
+
+    try {
+      const assignment: Assignment = JSON.parse(data);
+      // We need to know the current roomId of the view, assuming we are in a room view.
+      // Wait, this grid can display either a professor's timetable or a room's timetable.
+      // However, if we drop it in the same grid, the target_room_id is typically the same room (if we are in room view).
+      // If we are in professor view, changing day/period but keeping the same room...
+      // Let's assume the target room is the same as the assignment's current room.
+      const targetRoomId = assignment.room_id;
+
+      // Check if there is already an assignment at the target location
+      const existingAssignment = assignments.find(
+        (a) => a.day === targetDay && a.start_period === targetPeriod && a.room_id === targetRoomId
+      );
+
+      if (existingAssignment) {
+        // SWAP logic
+        await client.post('/timetables/swap', {
+          timetable_id: candidateId,
+          assignment1_id: assignment.id,
+          assignment2_id: existingAssignment.id
+        });
+      } else {
+        // 1. Validate
+        const valRes = await client.post('/timetables/validate-move', {
+          timetable_id: candidateId,
+          assignment_id: assignment.id,
+          target_day: targetDay,
+          target_start_period: targetPeriod,
+          target_room_id: targetRoomId
+        });
+
+        if (!valRes.data.is_valid) {
+          alert('이동 불가: ' + valRes.data.conflicts.join('\n'));
+          return;
+        }
+
+        // 2. Apply move
+        await client.post('/timetables/manual-edit', {
+          timetable_id: candidateId,
+          assignment_id: assignment.id,
+          target_day: targetDay,
+          target_start_period: targetPeriod,
+          target_room_id: targetRoomId
+        });
+      }
+
+      if (onAssignmentUpdated) onAssignmentUpdated();
+    } catch (err: any) {
+      alert(typeof err.response?.data?.detail === 'string' ? err.response.data.detail : '이동에 실패했습니다.');
+    }
+  };
+
   const handleOpenEditModal = (a: Assignment) => {
     if (readOnly) return;
     setSelectedAssignment(a);
-    setEditDay(a.day);
+    setEditDay(REV_DAY_MAP[a.day] || a.day);
     setEditPeriod(a.start_period);
     setEditRoomId(a.room_id);
     setValidationError(null);
@@ -88,11 +160,11 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
 
     try {
       await client.post('/timetables/manual-edit', {
-        candidate_id: candidateId,
+        timetable_id: candidateId,
         assignment_id: selectedAssignment.id,
-        new_day: editDay,
-        new_start_period: editPeriod,
-        new_room_id: editRoomId,
+        target_day: DAY_MAP[editDay],
+        target_start_period: editPeriod,
+        target_room_id: editRoomId
       });
 
       setSelectedAssignment(null);
@@ -125,9 +197,10 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                 <div className="text-[10px] text-slate-400">{PERIOD_TIMES[period - 1]}</div>
               </td>
               {DAYS.map((day) => {
+                const enDay = DAY_MAP[day];
                 // Find assignment that occupies (day, period)
                 const assign = assignments.find((a) => {
-                  if (a.day !== day) return false;
+                  if (a.day !== enDay) return false;
                   return period >= a.start_period && period < a.start_period + a.duration;
                 });
 
@@ -143,9 +216,13 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                     key={`${day}-${period}`}
                     rowSpan={isStart ? assign.duration : 1}
                     className="p-1 border-r border-slate-200 align-top relative h-16"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, enDay, period)}
                   >
                     {assign && isStart && (
                       <div
+                        draggable={!readOnly}
+                        onDragStart={(e) => handleDragStart(e, assign)}
                         onClick={() => handleOpenEditModal(assign)}
                         className={`h-full w-full rounded-xl border p-2 flex flex-col justify-between cursor-pointer transition-all shadow-sm hover:shadow-md ${getCourseColor(
                           assign.course_id
@@ -153,7 +230,9 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                       >
                         <div>
                           <div className="flex items-start justify-between gap-1">
-                            <span className="font-bold text-xs leading-tight">{assign.course_name}</span>
+                            <span className="font-bold text-xs leading-tight">
+                              {assign.course_name} <span className="font-normal text-[10px] opacity-80">({assign.section})</span>
+                            </span>
                             <div className="flex items-center space-x-1 shrink-0">
                               {assign.is_computer_lab && (
                                 <span className="bg-cyan-600 text-white p-0.5 rounded text-[9px]" title="실습실">
@@ -175,7 +254,7 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                           </div>
                           <div className="text-[11px] font-medium opacity-80 mt-0.5 flex items-center space-x-1">
                             <User className="w-3 h-3" />
-                            <span>{assign.professor_name} 교수</span>
+                            <span>{assign.professor_name}</span>
                           </div>
                         </div>
 
@@ -183,9 +262,6 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                           <span className="flex items-center space-x-0.5">
                             <Building className="w-3 h-3" />
                             <span className="font-semibold">{assign.room_name}</span>
-                          </span>
-                          <span>
-                            {assign.department} {assign.grade}학년({assign.section})
                           </span>
                         </div>
                       </div>

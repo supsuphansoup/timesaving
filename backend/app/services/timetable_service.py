@@ -62,12 +62,14 @@ def _build_course_inputs(
             CourseInput(
                 id=c.id,
                 professor_id=c.professor_id,
+                department=c.department,
+                target_grade=c.target_grade,
                 weekly_hours=c.weekly_hours,
                 expected_students=c.expected_students,
                 requires_computer=c.requires_computer,
                 # Constraints now come from the Course, not the Professor
-                unavailable_days=c.unavailable_days or [],
-                unavailable_periods=c.unavailable_periods or [],
+                non_preferred_days=c.non_preferred_days or [],
+                non_preferred_periods=c.non_preferred_periods or [],
                 preferred_days=c.preferred_days or [],
                 preferred_periods=c.preferred_periods or [],
                 fixed_room_ids=c.fixed_room_ids or [],
@@ -84,7 +86,6 @@ def _build_room_inputs(db: Session) -> list[RoomInput]:
             id=r.id,
             capacity=r.capacity,
             is_computer_room=r.is_computer_room,
-            unavailable_time=r.unavailable_time,
         )
         for r in rooms
     ]
@@ -131,6 +132,7 @@ async def run_generation_async(
     db_factory,  # callable -> Session
     task_id: str,
     min_candidates: int,
+    fixed_assignment_ids: list[int] = None,
 ) -> None:
     """
     Run the generation algorithm in a thread pool executor so the
@@ -143,6 +145,20 @@ async def run_generation_async(
         try:
             course_inputs = _build_course_inputs(db)
             room_inputs = _build_room_inputs(db)
+            
+            fixed_slots = None
+            if fixed_assignment_ids:
+                from app.models.timetable import Assignment
+                assignments = db.query(Assignment).filter(Assignment.id.in_(fixed_assignment_ids)).all()
+                fixed_slots = [
+                    {
+                        "course_id": a.course_id,
+                        "day": a.day,
+                        "start_period": a.start_period,
+                        "room_id": a.room_id
+                    }
+                    for a in assignments
+                ]
 
             if not course_inputs:
                 _tasks[task_id]["status"] = TASK_INFEASIBLE
@@ -205,6 +221,7 @@ def validate_move(
     target_room_id: int,
     target_day: str,
     target_period: int,
+    ignore_assignment_id: int = None,
 ) -> dict:
     """
     Check if moving an assignment to (target_room, target_day, target_period)
@@ -234,17 +251,16 @@ def validate_move(
         )
 
     # HC-01 room double-booking
-    room_conflict = (
-        db.query(Assignment)
-        .filter(
-            Assignment.timetable_id == timetable_id,
-            Assignment.id != assignment_id,
-            Assignment.room_id == target_room_id,
-            Assignment.day == target_day,
-            Assignment.start_period == target_period,
-        )
-        .first()
+    rq = db.query(Assignment).filter(
+        Assignment.timetable_id == timetable_id,
+        Assignment.id != assignment_id,
+        Assignment.room_id == target_room_id,
+        Assignment.day == target_day,
+        Assignment.start_period == target_period,
     )
+    if ignore_assignment_id:
+        rq = rq.filter(Assignment.id != ignore_assignment_id)
+    room_conflict = rq.first()
     if room_conflict:
         raise HTTPException(
             status_code=409,
@@ -252,16 +268,15 @@ def validate_move(
         )
 
     # HC-02 professor double-booking
-    other_course_ids = (
-        db.query(Assignment.course_id)
-        .filter(
-            Assignment.timetable_id == timetable_id,
-            Assignment.id != assignment_id,
-            Assignment.day == target_day,
-            Assignment.start_period == target_period,
-        )
-        .subquery()
+    oq = db.query(Assignment.course_id).filter(
+        Assignment.timetable_id == timetable_id,
+        Assignment.id != assignment_id,
+        Assignment.day == target_day,
+        Assignment.start_period == target_period,
     )
+    if ignore_assignment_id:
+        oq = oq.filter(Assignment.id != ignore_assignment_id)
+    other_course_ids = oq.subquery()
     prof_conflict = (
         db.query(Course)
         .filter(
@@ -388,3 +403,14 @@ def get_timetable_view(
         result.append(row)
 
     return result
+
+
+def validate_swap(db: Session, timetable_id: int, assignment1_id: int, assignment2_id: int) -> dict:
+    a1 = db.query(Assignment).filter(Assignment.id == assignment1_id, Assignment.timetable_id == timetable_id).first()
+    a2 = db.query(Assignment).filter(Assignment.id == assignment2_id, Assignment.timetable_id == timetable_id).first()
+    if not a1 or not a2:
+        raise HTTPException(status_code=404, detail="해당 배정을 찾을 수 없습니다.")
+
+    validate_move(db, timetable_id, assignment1_id, a2.room_id, a2.day, a2.start_period, ignore_assignment_id=assignment2_id)
+    validate_move(db, timetable_id, assignment2_id, a1.room_id, a1.day, a1.start_period, ignore_assignment_id=assignment1_id)
+    return {"ok": True}

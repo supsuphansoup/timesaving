@@ -15,8 +15,8 @@ class CourseCreate(BaseModel):
 
     # ── Scheduling constraints (hard) ────────────────────────────────────────
     # Allowed values for days: "MON" | "TUE" | "WED" | "THU" | "FRI"
-    unavailable_days: list[str] = Field(default_factory=list)
-    unavailable_periods: list[int] = Field(default_factory=list)  # 1-based period indices
+    non_preferred_days: list[str] = Field(default_factory=list)
+    non_preferred_periods: list[int] = Field(default_factory=list)  # 1-based period indices
     fixed_room_ids: list[int] = Field(default_factory=list)
     unavailable_room_ids: list[int] = Field(default_factory=list)
 
@@ -36,8 +36,8 @@ class CourseUpdate(BaseModel):
     requires_computer: bool | None = None
 
     # Constraints can also be updated individually
-    unavailable_days: list[str] | None = None
-    unavailable_periods: list[int] | None = None
+    non_preferred_days: list[str] | None = None
+    non_preferred_periods: list[int] | None = None
     fixed_room_ids: list[int] | None = None
     unavailable_room_ids: list[int] | None = None
     preferred_days: list[str] | None = None
@@ -55,8 +55,8 @@ class CourseOut(BaseModel):
     expected_students: int
     requires_computer: bool
 
-    unavailable_days: list[str]
-    unavailable_periods: list[int]
+    non_preferred_days: list[str]
+    non_preferred_periods: list[int]
     fixed_room_ids: list[int]
     unavailable_room_ids: list[int]
     preferred_days: list[str]

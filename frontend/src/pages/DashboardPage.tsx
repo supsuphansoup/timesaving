@@ -76,17 +76,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => {
 
           <div className="mt-5 flex flex-wrap gap-3">
             <button
-              onClick={() => onSelectTab('generate')}
+              onClick={() => onSelectTab('compare')}
               className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-blue-500/30 flex items-center space-x-2 transition-all"
             >
               <Sparkles className="w-4 h-4" />
-              <span>시간표 자동 생성 실행</span>
+              <span>자동생성 & 비교/수정으로 이동</span>
             </button>
             <button
-              onClick={() => onSelectTab('compare')}
+              onClick={() => onSelectTab('view')}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-4 py-2.5 rounded-xl border border-slate-700 flex items-center space-x-2 transition-all"
             >
-              <span>추천안 비교 & 수동 수정</span>
+              <span>시간표 조회 & 출력</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -95,27 +95,27 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => {
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4">
+        <div onClick={() => onSelectTab('professors')} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all">
           <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
             <Users className="w-6 h-6" />
           </div>
           <div>
             <div className="text-2xl font-bold text-slate-900">{stats.professorsCount}명</div>
-            <div className="text-xs font-semibold text-slate-500">등록된 교수 (6대 제약)</div>
+            <div className="text-xs font-semibold text-slate-500">등록된 교수</div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4">
+        <div onClick={() => onSelectTab('rooms')} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900">{stats.roomsCount}개소</div>
+            <div className="text-2xl font-bold text-slate-900">{stats.roomsCount}개</div>
             <div className="text-xs font-semibold text-slate-500">관리 강의실</div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4">
+        <div onClick={() => onSelectTab('courses')} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all">
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
             <BookOpen className="w-6 h-6" />
           </div>
@@ -125,17 +125,17 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4">
+        <div onClick={() => onSelectTab('compare')} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-purple-300 transition-all">
           <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
             <Sparkles className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900">{stats.candidatesCount}개안</div>
+            <div className="text-2xl font-bold text-slate-900">{stats.candidatesCount}개</div>
             <div className="text-xs font-semibold text-slate-500">생성된 추천안 후보</div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4">
+        <div onClick={() => onSelectTab('view')} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center space-x-4 cursor-pointer hover:shadow-md hover:border-amber-300 transition-all">
           <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
             <CheckCircle2 className="w-6 h-6" />
           </div>
@@ -147,9 +147,9 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => {
       </div>
 
       {/* Constraints & Recent History Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Left: Hard & Soft Rules Checklist */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        <div className="w-full bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center space-x-2">
               <ShieldCheck className="w-5 h-5 text-blue-600" />
@@ -195,39 +195,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => {
           </div>
         </div>
 
-        {/* Right: Recent Activity Log */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center space-x-2">
-              <History className="w-5 h-5 text-indigo-600" />
-              <h3 className="font-bold text-slate-900 text-base">최근 작업 이력</h3>
-            </div>
-            <button
-              onClick={() => onSelectTab('logs')}
-              className="text-xs text-blue-600 font-semibold hover:underline"
-            >
-              전체 보기
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {logs.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">기록된 이력이 없습니다.</p>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id} className="text-xs border-b border-slate-100 pb-2 last:border-0">
-                  <div className="flex items-center justify-between text-slate-400 text-[10px]">
-                    <span className="font-semibold text-slate-600">{log.username}</span>
-                    <span>{new Date(log.timestamp).toLocaleString('ko-KR')}</span>
-                  </div>
-                  <div className="font-medium text-slate-800 mt-1">{log.message}</div>
-                </div>
-              ))
-            )}
-          </div>
         </div>
       </div>
-    </div>
   );
 };
 

@@ -9,18 +9,8 @@ export interface Professor {
   id: number;
   semester_id: number;
   name: string;
+  employee_number: string;
   department: string;
-  phone?: string;
-  email?: string;
-  unavailable_days: string[];
-  preferred_days: string[];
-  unavailable_periods: number[];
-  preferred_periods: number[];
-  unavailable_slots?: string[];
-  preferred_slots?: string[];
-  fixed_room_id?: number | null;
-  unavailable_room_ids: number[];
-  weekly_hours_limit: number;
 }
 
 export interface Room {
@@ -30,23 +20,25 @@ export interface Room {
   capacity: number;
   is_computer_lab: boolean;
   is_common: boolean;
-  available_hours: any[];
-  unavailable_hours: { day: string; periods: number[] }[];
   notes?: string;
 }
 
 export interface Course {
   id: number;
   semester_id: number;
-  name: string;
+  course_name: string;
   professor_id: number;
   department: string;
-  grade: number;
-  section: string;
+  target_grade: number;
+  class_section: string;
   weekly_hours: number;
   expected_students: number;
-  computer_required: boolean;
-  fixed_room_id?: number | null;
+  requires_computer: boolean;
+  preferred_days: string[];
+  non_preferred_days: string[];
+  preferred_periods: number[];
+  non_preferred_periods: number[];
+  fixed_room_ids: number[];
   professor_name?: string;
   fixed_room_name?: string;
 }
@@ -73,11 +65,10 @@ export interface Assignment {
 export interface Candidate {
   id: number;
   semester_id: number;
-  name: string;
-  status: 'CANDIDATE' | 'CONFIRMED';
-  total_score: number;
-  satisfaction_rate: number;
-  satisfied_soft_constraints: number;
+  name?: string;
+  status: string;
+  score: number;
+  constraint_satisfaction_rate: number;
   conflict_count: number;
   created_at: string;
   assignments: Assignment[];

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GitCompare, CheckCircle2, Lock, Sparkles, AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { GitCompare, CheckCircle2, Lock, Sparkles, AlertCircle, RefreshCw, Layers , Cpu} from 'lucide-react';
 import { Candidate, Room, Course, Professor } from '../types';
 import TimetableGrid from '../components/TimetableGrid';
 import client from '../api/client';
@@ -11,6 +11,9 @@ const ComparePage: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
   const [reassigning, setReassigning] = useState(false);
 
   useEffect(() => {
@@ -45,21 +48,83 @@ const ComparePage: React.FC = () => {
     try {
       const candRes = await client.get('/timetables/candidates');
       setCandidates(candRes.data);
+      if (selectedCandidateId) {
+        const detailRes = await client.get(`/timetables/${selectedCandidateId}`);
+        setActiveTimetable(detailRes.data);
+      }
     } catch (err) {
       console.error('Failed to refresh candidates', err);
     }
   };
 
-  const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
+  
+  const [activeTimetable, setActiveTimetable] = useState<any>(null);
 
-  // Partial Re-assignment
+  useEffect(() => {
+    if (selectedCandidateId) {
+      client.get(`/timetables/${selectedCandidateId}`)
+        .then(res => setActiveTimetable(res.data))
+        .catch(err => console.error('Failed to fetch timetable details', err));
+    } else {
+      setActiveTimetable(null);
+    }
+  }, [selectedCandidateId]);
+
+const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
+  
+  const sortedCandidates = [...candidates]
+    .sort((a, b) => (b.constraint_satisfaction_rate || 0) - (a.constraint_satisfaction_rate || 0))
+    .slice(0, 5);
+
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenerateError(null);
+
+    try {
+      const res = await client.post('/timetables/generate', {
+        semester_id: 1,
+        num_candidates: 5,
+      });
+      const taskId = res.data.task_id;
+      
+      const interval = setInterval(async () => {
+        try {
+          const statusRes = await client.get(`/timetables/tasks/${taskId}`);
+          const status = statusRes.data.status;
+          if (status === 'COMPLETED') {
+            clearInterval(interval);
+            const candRes = await client.get('/timetables/candidates');
+            setCandidates(candRes.data);
+            if (candRes.data.length > 0) {
+              setSelectedCandidateId(candRes.data[0].id);
+            }
+            setGenerating(false);
+          } else if (status === 'INFEASIBLE' || status === 'FAILED') {
+            clearInterval(interval);
+            setGenerateError(statusRes.data.message || '생성 실패');
+            setGenerating(false);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 2000);
+      
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'object' && detail !== null ? detail.message : detail;
+      setGenerateError(errorMsg || '시간표 자동 생성 중 오류가 발생했습니다.');
+      setGenerating(false);
+    }
+  };
+
+// Partial Re-assignment
   const handlePartialReassign = async () => {
     if (!activeCandidate) return;
 
-    // Collect locked assignment IDs
-    const lockedIds = activeCandidate.assignments
-      .filter((a) => a.is_locked)
-      .map((a) => a.id);
+    const lockedIds = (activeTimetable?.assignments || [])
+      .filter((a: any) => a.is_locked)
+      .map((a: any) => a.id);
 
     if (lockedIds.length === 0) {
       if (!confirm('고정(Lock)된 수업이 없습니다. 전체 수업을 다시 재배정하시겠습니까?')) {
@@ -69,20 +134,40 @@ const ComparePage: React.FC = () => {
 
     setReassigning(true);
     try {
-      const res = await client.post('/timetables/generate', {
-        semester_id: 1,
-        num_candidates: 3,
-        locked_assignment_ids: lockedIds,
+      const res = await client.post('/timetables/reassign', {
+        timetable_id: activeCandidate.id,
+        fixed_assignment_ids: lockedIds,
       });
+      const taskId = res.data.task_id;
+      
+      // Poll
+      const interval = setInterval(async () => {
+        try {
+          const statusRes = await client.get(`/timetables/tasks/${taskId}`);
+          const status = statusRes.data.status;
+          if (status === 'COMPLETED') {
+            clearInterval(interval);
+            const candRes = await client.get('/timetables/candidates');
+            setCandidates(candRes.data);
+            if (candRes.data.length > 0) {
+              setSelectedCandidateId(candRes.data[0].id);
+            }
+            alert(`부분 재배정 완료! (고정 수업 ${lockedIds.length}개 유지됨)`);
+            setReassigning(false);
+          } else if (status === 'INFEASIBLE' || status === 'FAILED') {
+            clearInterval(interval);
+            alert(statusRes.data.message || '부분 재배정 실패');
+            setReassigning(false);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 2000);
 
-      setCandidates(res.data);
-      if (res.data.length > 0) {
-        setSelectedCandidateId(res.data[0].id);
-      }
-      alert(`부분 재배정 완료! (고정 수업 ${lockedIds.length}개 유지됨)`);
     } catch (err: any) {
-      alert(err.response?.data?.detail || '부분 재배정 실패');
-    } finally {
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'object' && detail !== null ? detail.message : detail;
+      alert(errorMsg || '부분 재배정 요청 실패');
       setReassigning(false);
     }
   };
@@ -100,6 +185,60 @@ const ComparePage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* Top Banner - Generate */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2 text-purple-600 font-semibold text-xs mb-1">
+            <Sparkles className="w-4 h-4" />
+            <span>최적 탐색 알고리즘 기반 시간표 자동 생성</span>
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">시간표 추천안 생성 & 통합 비교</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            제약조건을 만족하는 추천안 후보들을 자동 생성하고, 바로 아래에서 비교 및 수동 수정할 수 있습니다.
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-3 shrink-0">
+          
+
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-purple-500/20 flex items-center space-x-2 transition-all disabled:opacity-50"
+          >
+            <Cpu className="w-4 h-4" />
+            <span>{generating ? '시간표 연산 중...' : '시간표 자동 생성 실행'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Error Box */}
+      {generateError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl p-4 flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold text-red-900">시간표 생성 불가 (하드 제약 충돌)</div>
+            <div className="mt-1 leading-relaxed">{generateError}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading state animation */}
+      {generating && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4 shadow-sm animate-pulse">
+          <div className="inline-flex p-4 bg-purple-50 text-purple-600 rounded-full">
+            <Sparkles className="w-8 h-8 animate-spin" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-lg">최적화 로직 가동 중</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            1. 불가 요일/교시 및 강의실 픽스 필터링 <br />
+            2. 컴퓨터실 필요 수업 및 수용 인원 매칭 <br />
+            3. 선호 요일/교시 점수 극대화 알고리즘 실행...
+          </p>
+        </div>
+      )}
+
       {/* Header Bar */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -143,7 +282,8 @@ const ComparePage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Comparison Table */}
+
+      {/* Comparison Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
             <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2">
               <Layers className="w-4 h-4 text-blue-600" />
@@ -155,7 +295,7 @@ const ComparePage: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                     <th className="p-3">선택</th>
-                    <th className="p-3">추천안 명칭</th>
+                    <th className="p-3">적합도</th>
                     <th className="p-3">상태</th>
                     <th className="p-3">선호도 반영률 (Soft Rate)</th>
                     <th className="p-3">만족한 Soft Constraint</th>
@@ -164,7 +304,7 @@ const ComparePage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {candidates.map((cand) => {
+                  {sortedCandidates.map((cand: Candidate) => {
                     const isSelected = cand.id === selectedCandidateId;
                     const isConfirmed = cand.status === 'CONFIRMED';
                     return (
@@ -184,7 +324,7 @@ const ComparePage: React.FC = () => {
                           />
                         </td>
                         <td className="p-3 font-bold text-slate-800">
-                          {cand.name}
+                          {cand.name} ({Math.round(cand.constraint_satisfaction_rate * 100)}%)
                         </td>
                         <td className="p-3">
                           {isConfirmed ? (
@@ -197,8 +337,7 @@ const ComparePage: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="p-3 font-extrabold text-blue-600">{cand.satisfaction_rate}%</td>
-                        <td className="p-3 text-slate-700">{cand.satisfied_soft_constraints}개 만족</td>
+                        <td className="p-3 font-extrabold text-blue-600">{cand.constraint_satisfaction_rate?.toFixed(1) || 0}%</td>
                         <td className="p-3 text-emerald-600 font-semibold">0건 (정상)</td>
                         <td className="p-3 text-right space-x-1">
                           {!isConfirmed && (
@@ -235,13 +374,13 @@ const ComparePage: React.FC = () => {
                 <div className="flex items-center space-x-3 text-xs text-slate-600">
                   <span className="flex items-center space-x-1">
                     <Lock className="w-3.5 h-3.5 text-amber-500" />
-                    <span>고정된 강의: {activeCandidate.assignments.filter((a) => a.is_locked).length}개</span>
+                    <span>고정된 강의: {(activeTimetable?.assignments || []).filter((a: any) => a.is_locked).length}개</span>
                   </span>
                 </div>
               </div>
 
               <TimetableGrid
-                assignments={activeCandidate.assignments}
+                assignments={(activeTimetable?.assignments || [])}
                 candidateId={activeCandidate.id}
                 rooms={rooms}
                 courses={courses}

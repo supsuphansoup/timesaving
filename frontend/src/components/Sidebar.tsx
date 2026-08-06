@@ -20,8 +20,7 @@ const navItems = [
   { id: 'professors', label: '교수 제약조건 관리', icon: UserCheck },
   { id: 'rooms', label: '강의실 정보 관리', icon: Building2 },
   { id: 'courses', label: '강의 정보 관리', icon: BookOpen },
-  { id: 'generate', label: '시간표 자동 생성', icon: Sparkles },
-  { id: 'compare', label: '추천안 비교 & 수정', icon: GitCompare },
+  { id: 'compare', label: '자동생성 & 비교/수정', icon: GitCompare },
   { id: 'view', label: '시간표 조회 & 출력', icon: CalendarDays },
   { id: 'logs', label: '이력 및 로그 관리', icon: History },
 ];

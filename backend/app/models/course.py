@@ -30,10 +30,10 @@ class Course(Base):
     requires_computer: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # ── Scheduling constraints (hard) ────────────────────────────────────────
-    # Days the course cannot be scheduled  e.g. ["MON", "FRI"]
-    unavailable_days: Mapped[list] = mapped_column(JSON, default=list)
-    # Period indices the course cannot use  e.g. [1, 2]
-    unavailable_periods: Mapped[list] = mapped_column(JSON, default=list)
+    # Days the course ideally should not be scheduled e.g. ["MON", "FRI"]
+    non_preferred_days: Mapped[list] = mapped_column(JSON, default=list)
+    # Period indices the course ideally should not use e.g. [1, 2]
+    non_preferred_periods: Mapped[list] = mapped_column(JSON, default=list)
     # Room IDs that must be used (empty = any)
     fixed_room_ids: Mapped[list] = mapped_column(JSON, default=list)
     # Room IDs that cannot be used

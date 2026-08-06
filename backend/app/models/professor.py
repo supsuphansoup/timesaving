@@ -13,6 +13,7 @@ class Professor(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
+    employee_number: Mapped[str] = mapped_column(String(32), nullable=False)
     department: Mapped[str] = mapped_column(String(128), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

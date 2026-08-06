@@ -1,13 +1,15 @@
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response as FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user
 from app.models.log import Log
+from app.models.timetable import Assignment
 from app.response import error_response, success_response
 from app.schemas.timetable import (
+    SwapRequest,
     AssignmentOut,
     CandidateOut,
     DraftRequest,
@@ -116,16 +118,125 @@ def validate_move(
     _: dict = Depends(get_current_user),
 ):
     """수동 변경 충돌 실시간 검증."""
-    result = timetable_service.validate_move(
-        db,
-        body.timetable_id,
-        body.assignment_id,
-        body.target_room_id,
-        body.target_day,
-        body.target_start_period,
-    )
-    return success_response(data=result)
+    from fastapi import HTTPException
+    try:
+        timetable_service.validate_move(
+            db,
+            body.timetable_id,
+            body.assignment_id,
+            body.target_room_id,
+            body.target_day,
+            body.target_start_period,
+        )
+        return success_response(data={"is_valid": True, "conflicts": []})
+    except HTTPException as e:
+        msg = e.detail["message"] if isinstance(e.detail, dict) and "message" in e.detail else str(e.detail)
+        return success_response(data={"is_valid": False, "conflicts": [msg]})
 
+@router.post("/manual-edit")
+def manual_edit(
+    body: ValidateMoveRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """수동으로 단일 배정을 이동합니다."""
+    from fastapi import HTTPException
+    try:
+        timetable_service.validate_move(
+            db,
+            body.timetable_id,
+            body.assignment_id,
+            body.target_room_id,
+            body.target_day,
+            body.target_start_period,
+        )
+    except HTTPException as e:
+        msg = e.detail["message"] if isinstance(e.detail, dict) and "message" in e.detail else str(e.detail)
+        raise HTTPException(status_code=400, detail="이동 불가: " + msg)
+        
+    a = db.query(Assignment).filter(
+        Assignment.id == body.assignment_id, 
+        Assignment.timetable_id == body.timetable_id
+    ).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="해당 배정을 찾을 수 없습니다.")
+        
+    a.room_id = body.target_room_id
+    a.day = body.target_day
+    a.start_period = body.target_start_period
+    
+    db.add(
+        Log(
+            log_type="MODIFY",
+            user_id=current_user["user_id"],
+            username=current_user["username"],
+            detail={"action": "manual-edit", "assignment_id": a.id, "timetable_id": body.timetable_id},
+        )
+    )
+    db.commit()
+    return success_response(data={"message": "성공적으로 이동되었습니다."})
+
+
+@router.post("/swap")
+def swap_assignments(
+    body: SwapRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """두 배정의 위치를 교환합니다."""
+    from fastapi import HTTPException
+    try:
+        timetable_service.validate_swap(
+            db,
+            body.timetable_id,
+            body.assignment1_id,
+            body.assignment2_id,
+        )
+    except HTTPException as e:
+        msg = e.detail["message"] if isinstance(e.detail, dict) and "message" in e.detail else str(e.detail)
+        raise HTTPException(status_code=400, detail="교환 불가: " + msg)
+        
+    a1 = db.query(Assignment).filter(Assignment.id == body.assignment1_id, Assignment.timetable_id == body.timetable_id).first()
+    a2 = db.query(Assignment).filter(Assignment.id == body.assignment2_id, Assignment.timetable_id == body.timetable_id).first()
+    
+    # Swap
+    a1.room_id, a2.room_id = a2.room_id, a1.room_id
+    a1.day, a2.day = a2.day, a1.day
+    a1.start_period, a2.start_period = a2.start_period, a1.start_period
+    
+    db.add(Log(
+        log_type="MODIFY",
+        user_id=current_user["user_id"],
+        username=current_user["username"],
+        detail={"action": "swap", "assignment1_id": a1.id, "assignment2_id": a2.id, "timetable_id": body.timetable_id},
+    ))
+    db.commit()
+    return success_response(data={"message": "성공적으로 교환되었습니다."})
+
+
+@router.post("/toggle-lock/{assignment_id}")
+def toggle_lock(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """배정의 고정(Lock) 상태를 토글합니다."""
+    from fastapi import HTTPException
+    
+    a = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="해당 배정을 찾을 수 없습니다.")
+        
+    a.is_locked = not a.is_locked
+    
+    db.add(Log(
+        log_type="MODIFY",
+        user_id=current_user["user_id"],
+        username=current_user["username"],
+        detail={"action": "toggle-lock", "assignment_id": a.id, "is_locked": a.is_locked, "timetable_id": a.timetable_id},
+    ))
+    db.commit()
+    return success_response(data={"is_locked": a.is_locked})
 
 # ── Partial reassign ───────────────────────────────────────────────────────────
 
@@ -152,13 +263,13 @@ async def partial_reassign(
     )
     db.commit()
 
+        # Pass correctly without asyncio.ensure_future
     background_tasks.add_task(
-        asyncio.ensure_future,
-        timetable_service.run_generation_async(
-            db_factory=SessionLocal,
-            task_id=task_id,
-            min_candidates=1,
-        ),
+        timetable_service.run_generation_async,
+        db_factory=SessionLocal,
+        task_id=task_id,
+        min_candidates=1,
+        fixed_assignment_ids=body.fixed_assignment_ids,
     )
     return success_response(data={"task_id": task_id}, status_code=202)
 
@@ -249,5 +360,31 @@ def get_timetable(
     tt = timetable_service.get_timetable(db, timetable_id)
     assignments = timetable_service.get_assignments(db, timetable_id)
     data = TimetableOut.model_validate(tt).model_dump()
-    data["assignments"] = [AssignmentOut.model_validate(a).model_dump() for a in assignments]
+    
+    from app.models.course import Course
+    from app.models.room import Room
+    from app.models.professor import Professor
+    
+    enriched = []
+    for a in assignments:
+        a_dict = AssignmentOut.model_validate(a).model_dump()
+        course = db.query(Course).filter(Course.id == a.course_id).first()
+        room = db.query(Room).filter(Room.id == a.room_id).first()
+        if course:
+            prof = db.query(Professor).filter(Professor.id == course.professor_id).first()
+            a_dict["course_name"] = course.course_name
+            a_dict["department"] = course.department
+            a_dict["grade"] = course.target_grade
+            a_dict["section"] = course.class_section
+            if prof:
+                a_dict["professor_id"] = prof.id
+                a_dict["professor_name"] = prof.name
+        if room:
+            a_dict["room_name"] = room.room_name
+            a_dict["building"] = room.location
+            a_dict["is_computer_lab"] = room.is_computer_room
+            
+        enriched.append(a_dict)
+        
+    data["assignments"] = enriched
     return success_response(data=data)

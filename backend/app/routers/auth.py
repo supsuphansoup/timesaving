@@ -6,7 +6,7 @@ from app.database import get_db
 from app.dependencies import create_session, destroy_session, get_current_user
 from app.models.log import Log
 from app.response import error_response, success_response
-from app.schemas.auth import LoginRequest, PasswordChangeRequest
+from app.schemas.auth import LoginRequest, PasswordChangeRequest, RegisterRequest
 from app.services.auth_service import authenticate_user, change_password
 
 router = APIRouter(prefix="/api/v1/auth", tags=["인증"])
@@ -45,8 +45,17 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def get_me(current_user: dict = Depends(get_current_user)):
+def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """현재 로그인한 사용자 정보 조회 — 세션 유지 확인용."""
+    from app.models.user import User
+    user = db.query(User).filter(User.id == current_user["user_id"]).first()
+    if user:
+        return success_response(data={
+            "user_id": user.id, 
+            "username": user.username,
+            "name": user.name,
+            "department": user.department
+        })
     return success_response(data={"user_id": current_user["user_id"], "username": current_user["username"]})
 
 
@@ -74,3 +83,30 @@ def update_password(
     if not ok:
         return error_response("현재 비밀번호가 올바르지 않습니다.", "ER-07", 400)
     return success_response(message="비밀번호가 변경되었습니다.")
+
+
+@router.post("/register")
+def register(body: RegisterRequest, db: Session = Depends(get_db)):
+    """회원가입 처리."""
+    from app.models.user import User
+    from app.services.auth_service import hash_password
+    
+    if body.password != body.password_confirm:
+        return error_response("비밀번호가 일치하지 않습니다.", "ER-REG-01", 400)
+        
+    existing_user = db.query(User).filter(User.username == body.username).first()
+    if existing_user:
+        return error_response("이미 존재하는 아이디입니다.", "ER-REG-02", 400)
+        
+    new_user = User(
+        username=body.username,
+        hashed_password=hash_password(body.password),
+        name=body.name,
+        department=body.department,
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return success_response(message="회원가입이 완료되었습니다.")

@@ -17,9 +17,6 @@ class Room(Base):
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
     is_computer_room: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Time strings like "09:00-18:00" or comma-separated ranges
-    available_time: Mapped[str] = mapped_column(String(64), nullable=True)
-    unavailable_time: Mapped[str] = mapped_column(String(64), nullable=True)
 
     is_common_room: Mapped[bool] = mapped_column(Boolean, default=False)
     remarks: Mapped[str] = mapped_column(Text, nullable=True)

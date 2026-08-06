@@ -53,6 +53,7 @@ class Assignment(Base):
 
     # How many consecutive periods this assignment occupies
     duration: Mapped[int] = mapped_column(Integer, default=1)
+    is_locked: Mapped[bool] = mapped_column(default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

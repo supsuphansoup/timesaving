@@ -43,12 +43,15 @@ const TimetableViewPage: React.FC = () => {
       setProfessors(pRes.data);
 
       // Prefer confirmed timetable first, else latest candidate
+      
       const confirmed = candRes.data.find((c: any) => c.status === 'CONFIRMED');
-      if (confirmed) {
-        setCandidate(confirmed);
-      } else if (candRes.data.length > 0) {
-        setCandidate(candRes.data[0]);
+      const targetCand = confirmed || (candRes.data.length > 0 ? candRes.data[0] : null);
+      
+      if (targetCand) {
+        const detailRes = await client.get(`/timetables/${targetCand.id}`);
+        setCandidate(detailRes.data);
       }
+
     } catch (err) {
       console.error('Failed to fetch timetable view data', err);
     } finally {
@@ -59,7 +62,7 @@ const TimetableViewPage: React.FC = () => {
   // Filter assignments based on viewMode and search
   const getFilteredAssignments = (): Assignment[] => {
     if (!candidate) return [];
-    let list = candidate.assignments;
+    let list = candidate.assignments || [];
 
     if (viewMode === 'ROOM' && selectedRoomId !== 'ALL') {
       list = list.filter((a) => a.room_id === Number(selectedRoomId));
@@ -105,26 +108,6 @@ const TimetableViewPage: React.FC = () => {
     XLSX.writeFile(workbook, `동서대학교_시간표_${viewMode}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  // PDF Export (.pdf)
-  const handleExportPDF = async () => {
-    if (!timetableContainerRef.current) return;
-    try {
-      const canvas = await html2canvas(timetableContainerRef.current, { scale: 2 });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape A4
-      const imgWidth = 280;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
-      pdf.save(`동서대학교_시간표_${viewMode}_${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (err) {
-      alert('PDF 내보내기 실패');
-    }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   const filteredAssignments = getFilteredAssignments();
 
   return (
@@ -134,13 +117,13 @@ const TimetableViewPage: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2 text-indigo-600 font-semibold text-xs mb-1">
             <CalendarDays className="w-4 h-4" />
-            <span>시간표 다각도 조회 & Excel/PDF 출력</span>
+            <span>시간표 다각도 조회 & Excel 출력</span>
           </div>
           <h2 className="text-xl font-bold text-slate-900">
             시간표 조회 (강의실별 / 교수별 / 학년별 / 학과별)
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            필터 및 검색 기능으로 시간표를 빠르게 조회하고 Excel 또는 PDF로 내보냅니다.
+            필터 및 검색 기능으로 시간표를 빠르게 조회하고 Excel로 내보냅니다.
           </p>
         </div>
 
@@ -152,22 +135,6 @@ const TimetableViewPage: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5" />
             <span>Excel 내보내기</span>
-          </button>
-
-          <button
-            onClick={handleExportPDF}
-            className="bg-red-600 hover:bg-red-500 text-white font-semibold text-xs px-3.5 py-2 rounded-xl shadow-md shadow-red-500/20 flex items-center space-x-1.5 transition-all"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>PDF 저장</span>
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs px-3.5 py-2 rounded-xl border border-slate-700 flex items-center space-x-1.5 transition-all"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>인쇄</span>
           </button>
         </div>
       </div>

@@ -45,6 +45,18 @@ class AssignmentOut(BaseModel):
     day: str
     start_period: int
     duration: int
+    
+    # Enriched fields (populated dynamically)
+    course_name: str | None = None
+    professor_id: int | None = None
+    professor_name: str | None = None
+    department: str | None = None
+    grade: int | None = None
+    section: str | None = None
+    room_name: str | None = None
+    building: str | None = None
+    is_computer_lab: bool = False
+    is_locked: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -98,3 +110,8 @@ class TimetableOut(BaseModel):
     assignments: list[AssignmentOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+class SwapRequest(BaseModel):
+    timetable_id: int
+    assignment1_id: int
+    assignment2_id: int

@@ -1,11 +1,12 @@
 import React from 'react';
-import { Calendar, ShieldCheck, GraduationCap } from 'lucide-react';
+import { ShieldCheck, GraduationCap, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   user?: any;
+  onLogout?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
   return (
     <header className="no-print bg-slate-900 text-white border-b border-slate-800 shadow-md sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -25,19 +26,26 @@ const Header: React.FC<HeaderProps> = ({ user }) => {
 
         {/* Right Info & Actions */}
         <div className="flex items-center space-x-4">
-          {/* Semester Badge */}
-          <div className="hidden sm:flex items-center space-x-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300">
-            <Calendar className="w-4 h-4 text-blue-400" />
-            <span className="font-semibold text-slate-200">2026학년도 2학기</span>
-          </div>
-
-          {/* User Info */}
-          <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
+          {/* User Info & Actions */}
+          <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span className="text-sm font-medium text-slate-200">{user?.name || '김조교 (컴공과)'}</span>
+              <span className="text-sm font-medium text-slate-200">
+                {user?.name ? `${user.name} (${user.department || '부서미상'})` : (user?.username || '사용자')}
+              </span>
             </div>
+            
+            {onLogout && (
+              <button 
+                onClick={onLogout}
+                className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors text-sm border border-slate-700"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>로그아웃</span>
+              </button>
+            )}
           </div>
+
         </div>
       </div>
     </header>

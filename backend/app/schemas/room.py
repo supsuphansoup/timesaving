@@ -8,8 +8,6 @@ class RoomCreate(BaseModel):
     location: str | None = None
     capacity: int = Field(..., ge=1)
     is_computer_room: bool = False
-    available_time: str | None = None
-    unavailable_time: str | None = None
     is_common_room: bool = False
     remarks: str | None = None
 
@@ -19,8 +17,6 @@ class RoomUpdate(BaseModel):
     location: str | None = None
     capacity: int | None = None
     is_computer_room: bool | None = None
-    available_time: str | None = None
-    unavailable_time: str | None = None
     is_common_room: bool | None = None
     remarks: str | None = None
 
@@ -31,8 +27,6 @@ class RoomOut(BaseModel):
     location: str | None
     capacity: int
     is_computer_room: bool
-    available_time: str | None
-    unavailable_time: str | None
     is_common_room: bool
     remarks: str | None
     created_at: datetime

@@ -3,6 +3,9 @@ import { BookOpen, Plus, Edit2, Trash2, Monitor, Users, User } from 'lucide-reac
 import { Course, Professor, Room } from '../types';
 import client from '../api/client';
 
+const DAY_MAP: Record<string, string> = { '월': 'MON', '화': 'TUE', '수': 'WED', '목': 'THU', '금': 'FRI' };
+const REV_DAY_MAP: Record<string, string> = { 'MON': '월', 'TUE': '화', 'WED': '수', 'THU': '목', 'FRI': '금' };
+
 const CoursesPage: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [professors, setProfessors] = useState<Professor[]>([]);
@@ -18,11 +21,16 @@ const CoursesPage: React.FC = () => {
   const [professorId, setProfessorId] = useState<number>(0);
   const [department, setDepartment] = useState('컴퓨터공학과');
   const [grade, setGrade] = useState<number>(1);
-  const [section, setSection] = useState('A');
+  const [section, setSection] = useState('');
   const [weeklyHours, setWeeklyHours] = useState<number>(3);
   const [expectedStudents, setExpectedStudents] = useState<number>(30);
   const [computerRequired, setComputerRequired] = useState<boolean>(false);
   const [fixedRoomId, setFixedRoomId] = useState<number | null>(null);
+  
+  const [preferredDays, setPreferredDays] = useState<string[]>([]);
+  const [nonPreferredDays, setNonPreferredDays] = useState<string[]>([]);
+  const [preferredPeriods, setPreferredPeriods] = useState<number[]>([]);
+  const [nonPreferredPeriods, setNonPreferredPeriods] = useState<number[]>([]);
 
   const [saving, setSaving] = useState(false);
 
@@ -54,26 +62,34 @@ const CoursesPage: React.FC = () => {
   const handleOpenModal = (course?: Course) => {
     if (course) {
       setEditingCourse(course);
-      setName(course.name);
+      setName(course.course_name);
       setProfessorId(course.professor_id);
       setDepartment(course.department);
-      setGrade(course.grade);
-      setSection(course.section);
+      setGrade(course.target_grade);
+      setSection(course.class_section);
       setWeeklyHours(course.weekly_hours);
       setExpectedStudents(course.expected_students);
-      setComputerRequired(course.computer_required);
-      setFixedRoomId(course.fixed_room_id || null);
+      setComputerRequired(course.requires_computer);
+      setFixedRoomId(course.fixed_room_ids && course.fixed_room_ids.length > 0 ? course.fixed_room_ids[0] : null);
+      setPreferredDays((course.preferred_days || []).map(d => REV_DAY_MAP[d] || d));
+      setNonPreferredDays((course.non_preferred_days || []).map(d => REV_DAY_MAP[d] || d));
+      setPreferredPeriods(course.preferred_periods || []);
+      setNonPreferredPeriods(course.non_preferred_periods || []);
     } else {
       setEditingCourse(null);
       setName('');
       setProfessorId(professors.length > 0 ? professors[0].id : 0);
       setDepartment('컴퓨터공학과');
       setGrade(1);
-      setSection('A');
+      setSection('');
       setWeeklyHours(3);
       setExpectedStudents(30);
       setComputerRequired(false);
       setFixedRoomId(null);
+      setPreferredDays([]);
+      setNonPreferredDays([]);
+      setPreferredPeriods([]);
+      setNonPreferredPeriods([]);
     }
     setIsModalOpen(true);
   };
@@ -84,15 +100,19 @@ const CoursesPage: React.FC = () => {
 
     const payload = {
       semester_id: 1,
-      name,
+      course_name: name,
       professor_id: professorId,
       department,
-      grade,
-      section,
+      target_grade: grade,
+      class_section: section,
       weekly_hours: weeklyHours,
       expected_students: expectedStudents,
-      computer_required: computerRequired,
-      fixed_room_id: fixedRoomId || null,
+      requires_computer: computerRequired,
+      fixed_room_ids: fixedRoomId ? [fixedRoomId] : [],
+      preferred_days: preferredDays.map(d => DAY_MAP[d] || d),
+      non_preferred_days: nonPreferredDays.map(d => DAY_MAP[d] || d),
+      preferred_periods: preferredPeriods,
+      non_preferred_periods: nonPreferredPeriods,
     };
 
     try {
@@ -104,19 +124,32 @@ const CoursesPage: React.FC = () => {
       setIsModalOpen(false);
       fetchData();
     } catch (err: any) {
-      alert(err.response?.data?.detail || '강의 정보 저장에 실패했습니다.');
+      const detail = err.response?.data?.detail;
+      alert(typeof detail === 'string' ? detail : JSON.stringify(detail) || '강의 정보 저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: number, cName: string) => {
-    if (!confirm(`${cName} 강의를 삭제하시겠습니까?`)) return;
+    if (!confirm(`${cName} 과목을 삭제하시겠습니까?`)) return;
     try {
       await client.delete(`/courses/${id}`);
       fetchData();
     } catch (err: any) {
       alert(err.response?.data?.detail || '삭제 실패');
+    }
+  };
+
+
+  const handleResetAll = async () => {
+    if (!confirm('모든 강의 정보가 삭제됩니다. 계속하시겠습니까?')) return;
+    try {
+      await client.delete('/courses/action/reset');
+      alert('모든 강의 정보가 초기화되었습니다.');
+      fetchCourses();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || '강의 정보 초기화 실패');
     }
   };
 
@@ -135,13 +168,22 @@ const CoursesPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-indigo-500/20 flex items-center space-x-1.5 transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>신규 강의 등록</span>
-        </button>
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            onClick={handleResetAll}
+            className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center space-x-1.5 transition-all"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>강의 정보 초기화</span>
+          </button>
+          <button
+            onClick={() => handleOpenModal()}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-md shadow-indigo-500/20 flex items-center space-x-1.5 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>신규 강의 등록</span>
+          </button>
+        </div>
       </div>
 
       {/* Courses Grid */}
@@ -150,18 +192,20 @@ const CoursesPage: React.FC = () => {
           <div key={c.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 hover:border-indigo-300 transition-all">
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-bold text-base text-slate-900">{c.name}</span>
-                  {c.computer_required && (
+                <div className="flex items-center space-x-3 mb-2">
+                  <span className="font-bold text-base text-slate-900">{c.course_name}</span>
+                  {c.requires_computer && (
                     <span className="bg-cyan-100 text-cyan-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center space-x-1">
                       <Monitor className="w-3 h-3" />
                       <span>컴퓨터 필수</span>
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-1">
-                  <User className="w-3 h-3" />
-                  <span>{c.professor_name} 교수</span>
+                <div className="text-xs text-slate-500 flex items-center space-x-2">
+                  <Users className="w-3.5 h-3.5 text-slate-400" />
+                  <span>
+                    {c.department} {c.target_grade}학년 ({c.class_section}분반)
+                  </span>
                 </div>
               </div>
 
@@ -173,7 +217,7 @@ const CoursesPage: React.FC = () => {
                   <Edit2 className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleDelete(c.id, c.name)}
+                  onClick={() => handleDelete(c.id, c.course_name)}
                   className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -185,7 +229,7 @@ const CoursesPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span>소속 / 학년:</span>
                 <span className="font-semibold text-slate-900">
-                  {c.department} {c.grade}학년 ({c.section}분반)
+                  {c.department} {c.target_grade}학년 ({c.class_section}분반)
                 </span>
               </div>
 
@@ -270,7 +314,7 @@ const CoursesPage: React.FC = () => {
                       value={section}
                       onChange={(e) => setSection(e.target.value)}
                       className="w-1/2 px-2 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-center"
-                      placeholder="분반"
+                      placeholder="예: 101, 102"
                     />
                   </div>
                 </div>
@@ -301,6 +345,82 @@ const CoursesPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">비선호 요일 (다중 선택)</label>
+                  <div className="flex gap-2">
+                    {['월', '화', '수', '목', '금'].map((d) => (
+                      <label key={d} className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={nonPreferredDays.includes(d)}
+                          onChange={(e) => {
+                            if (e.target.checked) setNonPreferredDays([...nonPreferredDays, d]);
+                            else setNonPreferredDays(nonPreferredDays.filter((day) => day !== d));
+                          }}
+                        />
+                        <span>{d}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">비선호 교시 (다중 선택)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
+                      <label key={p} className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={nonPreferredPeriods.includes(p)}
+                          onChange={(e) => {
+                            if (e.target.checked) setNonPreferredPeriods([...nonPreferredPeriods, p]);
+                            else setNonPreferredPeriods(nonPreferredPeriods.filter((period) => period !== p));
+                          }}
+                        />
+                        <span>{p}교시</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">선호 요일 (다중 선택)</label>
+                  <div className="flex gap-2">
+                    {['월', '화', '수', '목', '금'].map((d) => (
+                      <label key={d} className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={preferredDays.includes(d)}
+                          onChange={(e) => {
+                            if (e.target.checked) setPreferredDays([...preferredDays, d]);
+                            else setPreferredDays(preferredDays.filter((day) => day !== d));
+                          }}
+                        />
+                        <span>{d}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">선호 교시 (다중 선택)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
+                      <label key={p} className="flex items-center space-x-1">
+                        <input
+                          type="checkbox"
+                          checked={preferredPeriods.includes(p)}
+                          onChange={(e) => {
+                            if (e.target.checked) setPreferredPeriods([...preferredPeriods, p]);
+                            else setPreferredPeriods(preferredPeriods.filter((period) => period !== p));
+                          }}
+                        />
+                        <span>{p}교시</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
 
               <div className="pt-2">
                 <label className="flex items-center space-x-2 cursor-pointer bg-slate-50 p-3 rounded-xl border border-slate-200">
