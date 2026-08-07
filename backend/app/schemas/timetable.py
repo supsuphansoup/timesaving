@@ -27,7 +27,8 @@ class CandidateOut(BaseModel):
     task_id: str | None
     rank: int
     score: float
-    constraint_satisfaction_rate: float
+    pref_rate: float
+    fitness_rate: float
     conflict_count: int
     status: str
     created_at: datetime
@@ -41,7 +42,8 @@ class AssignmentOut(BaseModel):
     id: int
     timetable_id: int
     course_id: int
-    room_id: int
+    # 온라인 수업(0교시)은 강의실이 없어 None이다.
+    room_id: int | None = None
     day: str
     start_period: int
     duration: int
@@ -63,9 +65,9 @@ class AssignmentOut(BaseModel):
 
 class AssignmentIn(BaseModel):
     course_id: int
-    room_id: int
+    room_id: int | None = None
     day: str
-    start_period: int = Field(..., ge=1, le=9)
+    start_period: int = Field(..., ge=0, le=9)
     duration: int = Field(default=1, ge=1)
 
 
@@ -76,7 +78,7 @@ class ValidateMoveRequest(BaseModel):
     assignment_id: int
     target_room_id: int
     target_day: str
-    target_start_period: int = Field(..., ge=1, le=9)
+    target_start_period: int = Field(..., ge=0, le=9)
 
 
 # ── Partial reassign ──────────────────────────────────────────────────────────
@@ -101,7 +103,8 @@ class TimetableOut(BaseModel):
     status: str
     version: int
     score: float
-    constraint_satisfaction_rate: float
+    pref_rate: float
+    fitness_rate: float
     conflict_count: int
     task_id: str | None
     rank: int

@@ -19,7 +19,7 @@ from app.schemas.timetable import (
     ValidateMoveRequest,
 )
 from app.services import timetable_service
-from app.services.export_service import export_excel, export_pdf
+from app.services.export_service import export_excel
 
 router = APIRouter(prefix="/api/v1/timetables", tags=["시간표"])
 
@@ -69,7 +69,9 @@ def get_task_status(
     message = None
 
     if status == timetable_service.TASK_INFEASIBLE:
-        message = "제약조건을 모두 만족하는 시간표 생성 불가"
+        message = task.get("error") or "제약조건을 모두 만족하는 시간표 생성 불가"
+    elif status == timetable_service.TASK_TIMEOUT:
+        message = task.get("error") or "제한 시간 내에 시간표를 찾지 못했습니다."
     elif status == timetable_service.TASK_FAILED:
         message = task.get("error", "알 수 없는 오류가 발생했습니다.")
 
@@ -331,15 +333,16 @@ def export_timetable(
     db: Session = Depends(get_db),
     _: dict = Depends(get_current_user),
 ):
-    """시간표 파일 내보내기 (pdf | excel)."""
-    if format == "pdf":
-        content = export_pdf(db, timetable_id)
-        media_type = "application/pdf"
-        filename = f"timetable_{timetable_id}.pdf"
-    else:
-        content = export_excel(db, timetable_id)
-        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = f"timetable_{timetable_id}.xlsx"
+    """시간표 엑셀 내보내기 (학부 배포 양식)."""
+    if format not in ("excel", "xlsx"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "ER-13",
+                    "message": "엑셀(format=excel)만 지원합니다."},
+        )
+    content = export_excel(db, timetable_id)
+    media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    filename = f"timetable_{timetable_id}.xlsx"
 
     return FileResponse(
         content=content,

@@ -17,9 +17,10 @@ const DAYS = ['월', '화', '수', '목', '금'];
 const DAY_MAP: Record<string, string> = { '월': 'MON', '화': 'TUE', '수': 'WED', '목': 'THU', '금': 'FRI' };
 const REV_DAY_MAP: Record<string, string> = { 'MON': '월', 'TUE': '화', 'WED': '수', 'THU': '목', 'FRI': '금' };
 
-const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const PERIODS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 const PERIOD_TIMES = [
+  '08:00 - 08:50',
   '09:00 - 09:50',
   '10:00 - 10:50',
   '11:00 - 11:50',
@@ -194,7 +195,7 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
             <tr key={period} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
               <td className="p-2 border-r border-slate-200 text-center bg-slate-50">
                 <div className="font-bold text-slate-700">{period}교시</div>
-                <div className="text-[10px] text-slate-400">{PERIOD_TIMES[period - 1]}</div>
+                <div className="text-[10px] text-slate-400">{PERIOD_TIMES[period]}</div>
               </td>
               {DAYS.map((day) => {
                 const enDay = DAY_MAP[day];
@@ -330,7 +331,7 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                   >
                     {PERIODS.map((p) => (
                       <option key={p} value={p}>
-                        {p}교시 ({PERIOD_TIMES[p - 1]})
+                        {p}교시 ({PERIOD_TIMES[p]})
                       </option>
                     ))}
                   </select>
@@ -346,7 +347,7 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({
                 >
                   {rooms.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.building} {r.name} (수용: {r.capacity}명 {r.is_computer_lab ? '/ 컴퓨터실' : ''})
+                      {(r as any).location || ''} {(r as any).room_name || r.name} (수용: {r.capacity}명 {(r as any).is_computer_room || r.is_computer_lab ? '/ 컴퓨터실' : ''})
                     </option>
                   ))}
                 </select>

@@ -14,7 +14,15 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.algorithm.engine import CourseInput, RoomInput, SlotAssignment, solve
+from app.algorithm.constraints import BLOCKED_SLOTS, ONLINE_PERIOD
+from app.algorithm.engine import (
+    CourseInput,
+    InfeasibleModelError,
+    RoomInput,
+    SlotAssignment,
+    SolverTimeoutError,
+    solve,
+)
 from app.config import settings
 from app.models.course import Course
 from app.models.professor import Professor
@@ -28,7 +36,8 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 TASK_PROCESSING = "PROCESSING"
 TASK_COMPLETED = "COMPLETED"
-TASK_INFEASIBLE = "INFEASIBLE"
+TASK_INFEASIBLE = "INFEASIBLE"   # 제약조건상 시간표가 존재하지 않음
+TASK_TIMEOUT = "TIMEOUT"         # 해가 존재할 수 있으나 제한 시간 내에 못 찾음
 TASK_FAILED = "FAILED"
 
 
@@ -61,22 +70,28 @@ def _build_course_inputs(
         result.append(
             CourseInput(
                 id=c.id,
+                course_name=c.course_name,
                 professor_id=c.professor_id,
                 department=c.department,
                 target_grade=c.target_grade,
                 weekly_hours=c.weekly_hours,
+                online_hours=getattr(c, "online_hours", 0) or 0,
                 expected_students=c.expected_students,
                 requires_computer=c.requires_computer,
-                # Constraints now come from the Course, not the Professor
                 non_preferred_days=c.non_preferred_days or [],
                 non_preferred_periods=c.non_preferred_periods or [],
                 preferred_days=c.preferred_days or [],
                 preferred_periods=c.preferred_periods or [],
                 fixed_room_ids=c.fixed_room_ids or [],
                 unavailable_room_ids=c.unavailable_room_ids or [],
+                block_preference=c.block_preference,
+                mutually_exclusive_with=c.mutually_exclusive_with,
+                fixed_schedules=c.fixed_schedules,
+                target_cohorts=c.target_cohorts,
             )
         )
     return result
+
 
 
 def _build_room_inputs(db: Session) -> list[RoomInput]:
@@ -104,7 +119,8 @@ def _persist_results(
             status="CANDIDATE",
             version=1,
             score=result.score,
-            constraint_satisfaction_rate=result.constraint_satisfaction_rate,
+            pref_rate=result.pref_rate,
+            fitness_rate=result.fitness_rate,
             conflict_count=result.conflict_count,
             task_id=task_id,
             rank=rank,
@@ -165,12 +181,24 @@ async def run_generation_async(
                 _tasks[task_id]["error"] = "제약조건을 모두 만족하는 시간표 생성 불가"
                 return
 
-            results = solve(
-                course_inputs,
-                room_inputs,
-                min_candidates=min_candidates,
-                timeout_seconds=settings.algorithm_timeout_seconds,
-            )
+            try:
+                results = solve(
+                    course_inputs,
+                    room_inputs,
+                    fixed_slots=fixed_slots,
+                    min_candidates=min_candidates,
+                    timeout_seconds=settings.algorithm_timeout_seconds,
+                )
+            except InfeasibleModelError as exc:
+                _tasks[task_id]["status"] = TASK_INFEASIBLE
+                _tasks[task_id]["error"] = str(exc)
+                return
+            except SolverTimeoutError as exc:
+                # 제약조건 문제가 아니라 계산 시간 문제 — 구분해서 알려야 사용자가
+                # 멀쩡한 제약조건을 헛되이 뜯어고치지 않는다.
+                _tasks[task_id]["status"] = TASK_TIMEOUT
+                _tasks[task_id]["error"] = str(exc)
+                return
 
             if not results:
                 _tasks[task_id]["status"] = TASK_INFEASIBLE
@@ -218,7 +246,7 @@ def validate_move(
     db: Session,
     timetable_id: int,
     assignment_id: int,
-    target_room_id: int,
+    target_room_id: int | None,
     target_day: str,
     target_period: int,
     ignore_assignment_id: int = None,
@@ -233,8 +261,55 @@ def validate_move(
         raise HTTPException(status_code=404, detail="해당 배정을 찾을 수 없습니다.")
 
     course = db.query(Course).filter(Course.id == assignment.course_id).first()
-    room = db.query(Room).filter(Room.id == target_room_id).first()
+    room = db.query(Room).filter(Room.id == target_room_id).first() if target_room_id else None
     professor = db.query(Professor).filter(Professor.id == course.professor_id).first()
+
+    # 0교시는 온라인 전용 — 강의실을 지정한 대면 배정은 놓을 수 없다.
+    if target_period == ONLINE_PERIOD and target_room_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-11",
+                    "message": "0교시는 온라인 수업 전용이라 강의실을 배정할 수 없습니다."},
+        )
+    if target_period != ONLINE_PERIOD and target_room_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-12",
+                    "message": "대면 수업(1~9교시)에는 강의실을 지정해야 합니다."},
+        )
+
+    # Slots the engine never uses (e.g. WED 5–6교시 공동시간)
+    if (target_day, target_period) in BLOCKED_SLOTS:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-06", "message": "해당 시간대는 배정이 불가능한 공동 시간입니다."},
+        )
+
+    # HC-03 불가 요일
+    if target_day in (course.non_preferred_days or []):
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-07", "message": f"'{course.course_name}'의 불가 요일({target_day})입니다."},
+        )
+
+    # HC-04 불가 교시
+    if target_period in (course.non_preferred_periods or []):
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-08", "message": f"'{course.course_name}'의 불가 교시({target_period}교시)입니다."},
+        )
+
+    # HC-05 고정 강의실 / HC-06 배정 불가 강의실
+    if course.fixed_room_ids and target_room_id not in course.fixed_room_ids:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-09", "message": "해당 강의는 지정된 고정 강의실만 사용할 수 있습니다."},
+        )
+    if target_room_id in (course.unavailable_room_ids or []):
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "ER-10", "message": "배정 불가로 지정된 강의실입니다."},
+        )
 
     # HC-08 capacity
     if room and room.capacity < course.expected_students:
@@ -290,6 +365,26 @@ def validate_move(
             status_code=409,
             detail={"error_code": "ER-01", "message": "교수 시간 충돌이 발생했습니다."},
         )
+
+    # HC-10 cohort (same student group) double-booking — enforced by the engine,
+    # so the manual editor must enforce it too.
+    cohorts = set(course.target_cohorts or [f"{course.department}_{course.target_grade}"])
+    other_courses = (
+        db.query(Course).filter(Course.id.in_(other_course_ids)).all()
+    )
+    for other in other_courses:
+        other_cohorts = set(
+            other.target_cohorts or [f"{other.department}_{other.target_grade}"]
+        )
+        if cohorts & other_cohorts:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error_code": "ER-05",
+                    "message": f"동일 수강 대상({', '.join(sorted(cohorts & other_cohorts))})의 "
+                               f"'{other.course_name}' 수업과 시간이 겹칩니다.",
+                },
+            )
 
     return {"ok": True}
 
@@ -368,7 +463,7 @@ def get_timetable_view(
     result = []
     for a in assignments:
         course = db.query(Course).filter(Course.id == a.course_id).first()
-        room = db.query(Room).filter(Room.id == a.room_id).first()
+        room = db.query(Room).filter(Room.id == a.room_id).first() if a.room_id else None
         prof = db.query(Professor).filter(Professor.id == course.professor_id).first() if course else None
 
         row = {

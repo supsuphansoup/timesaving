@@ -67,58 +67,115 @@
 
 ### 3.2 기준 데이터 관리 (Master Data CRUD)
 
-*(모든 리스트 조회는 `?semester_id=` 쿼리 파라미터를 필수로 받습니다.)*
+> ⚠️ **`semester_id`는 더 이상 사용하지 않습니다.** 학기 단위 분리를 걷어내고 전역 관리로
+> 리팩토링되었습니다. 목록 조회에 `?semester_id=`를 붙일 필요가 없습니다.
 
-**[교수 제약조건 관리]**
+**[교수 정보 관리]**
 * **목록 조회**: `GET /api/v1/professors`
 * **등록/수정**: `POST /api/v1/professors` / `PUT /api/v1/professors/{id}`
 * `body`:
-`json     {       "name": "홍길동",       "department": "컴퓨터공학과",       "unavailable_days": ["MON", "TUE"],       "preferred_days": ["WED"],       "unavailable_periods": [1, 2],       "preferred_periods": [3, 4],       "fixed_room_ids": [101],       "unavailable_room_ids": [201],       "weekly_hours": 3     }`
+```json
+{ "name": "홍길동", "employee_number": "60063", "department": "컴퓨터공학전공" }
+```
+> ⚠️ **교수에는 제약 조건 필드가 없습니다.** 불가/선호 요일·교시는 전부 `Course`가 소유합니다.
+> (같은 교수라도 과목·분반마다 사정이 다르기 때문 — PROJECT_CONTEXT.md Rule 1)
 
 **[강의실 정보 관리]**
 * **목록 조회**: `GET /api/v1/rooms`
 * **등록/수정**: `POST /api/v1/rooms` / `PUT /api/v1/rooms/{id}`
 * `body`:
-`json     {       "room_name": "U-IT 601",       "location": "U-IT관",       "capacity": 50,       "is_computer_room": true,       "available_time": "09:00-18:00",       "unavailable_time": "12:00-13:00",       "is_common_room": false,       "remarks": "프로젝터 노후화"     }`
+```json
+{ "room_name": "601", "location": "U-IT관", "capacity": 51,
+  "is_computer_room": false, "is_common_room": false, "remarks": "프로젝터 노후화" }
+```
 
 **[강의 정보 관리]**
 * **목록 조회**: `GET /api/v1/courses`
 * **등록/수정**: `POST /api/v1/courses` / `PUT /api/v1/courses/{id}`
+* **전체 초기화**: `DELETE /api/v1/courses/action/reset`
 * `body`:
-`json     {       "course_name": "자료구조",       "professor_id": 10,       "department": "컴퓨터공학과",       "target_grade": 2,       "class_section": "A",       "weekly_hours": 3,       "expected_students": 45,       "requires_computer": true     }`
+```json
+{
+  "course_name": "자료구조", "professor_id": 10,
+  "department": "컴퓨터공학전공", "target_grade": 2,
+  "class_section": "101",
+  "weekly_hours": 3,
+  "online_hours": 1,
+  "expected_students": 45, "requires_computer": true,
+
+  "non_preferred_days": ["MON"], "non_preferred_periods": [1, 2],
+  "preferred_days": ["TUE", "THU"], "preferred_periods": [3, 4],
+  "fixed_room_ids": [], "unavailable_room_ids": [],
+  "target_cohorts": ["컴퓨터공학전공_2"]
+}
+```
+| 필드 | 의미 |
+|---|---|
+| `class_section` | 분반. 학부 관례상 `"101"`, `"102"` 형식 |
+| `online_hours` | 온라인 시수 (0–3, 기본 0). **0교시에 강의실 없이 배정**됩니다 |
+| `non_preferred_days` / `non_preferred_periods` | 이름과 달리 **하드 제약(불가)** — HC-03/HC-04 |
+| `preferred_days` / `preferred_periods` | 소프트 제약(선호) — SC-01/SC-02 |
 
 ### 3.3 시간표 자동 생성 (Algorithm Engine)
 
 - **시간표 자동 생성 요청**: `POST /api/v1/timetables/generate`
-    - `body`: `{"semester_id": int, "min_candidates": 3}`
-    - `response (202 Accepted)`: `{"data": {"task_id": "uuid-..."}}` 반환.
+    - `body`: `{"min_candidates": 3}`  ← **`num_candidates` 아님**
+    - `response (202 Accepted)`: `{"data": {"task_id": "uuid-..."}}`
 - **비동기 작업 상태 Polling**: `GET /api/v1/timetables/tasks/{task_id}`
-    - `response (200 OK)`: `status` (`PROCESSING`, `COMPLETED`, `INFEASIBLE`)
-- **추천안(후보) 리스트 조회**: `GET /api/v1/timetables/candidates?semester_id={id}`
-    - `response`: 총점, 제약조건 반영률, 충돌 수 포함 반환.
+
+| status | 의미 |
+|---|---|
+| `PROCESSING` | 계산 중 |
+| `COMPLETED` | 후보 생성 완료 |
+| `INFEASIBLE` | 제약조건상 시간표가 **존재하지 않음**(증명됨) |
+| `TIMEOUT` | 해가 있을 수 있으나 **제한 시간 초과** |
+| `FAILED` | 예기치 못한 오류 |
+
+> ⚠️ `INFEASIBLE`과 `TIMEOUT`을 같은 메시지로 묶지 마세요. 전자는 제약을 고쳐야 하고,
+> 후자는 `ALGORITHM_TIMEOUT_SECONDS`를 늘려야 합니다. 응답의 `message`에 구체적 사유가 담깁니다.
+
+- **추천안(후보) 리스트 조회**: `GET /api/v1/timetables/candidates`
+    - `response`: 총점(`score`), 선호도 반영률(`pref_rate`), 쾌적도(`fitness_rate`), 충돌 수(`conflict_count`)
 
 ### 3.4 시간표 수정 및 재배정
 
 - **수동 변경 검증 (실시간)**: `POST /api/v1/timetables/validate-move`
-    - `body`: 이동하려는 강의 ID, 타겟 강의실 ID, 타겟 시간
-    - `response`: 충돌 여부 즉시 검증 (충돌 시 ER-01 ~ ER-04 반환)
+    - `body`: `{"assignment_id": int, "target_room_id": int | null, "target_day": str, "target_period": int}`
+    - `response`: 충돌 시 아래 오류 코드 반환
+
+| 코드 | 위반 |
+|---|---|
+| ER-01 | HC-02 교수 시간 중복 |
+| ER-02 | HC-01 강의실 시간 중복 |
+| ER-03 | HC-08 수용 인원 초과 |
+| ER-04 | HC-07 컴퓨터실 필요 |
+| ER-05 | HC-10 코호트(동일 수강 대상) 충돌 |
+| ER-06 | 배정 불가 공동 시간대(`BLOCKED_SLOTS`) |
+| ER-07 / ER-08 | HC-03 불가 요일 / HC-04 불가 교시 |
+| ER-09 / ER-10 | HC-05 고정 강의실 / HC-06 배정 불가 강의실 |
+| ER-11 | 0교시(온라인 전용)에 강의실을 지정함 |
+| ER-12 | 대면 수업(1–9교시)에 강의실이 없음 |
+
+- **수동 편집 / 스왑 / 잠금**: `POST /api/v1/timetables/manual-edit`, `/swap`, `/toggle-lock/{assignment_id}`
 - **부분 재배정 (Partial Reassign)**: `POST /api/v1/timetables/reassign`
-    - `body`: `{"fixed_assignment_ids": [1, 2, 3]}`
+    - `body`: `{"fixed_assignment_ids": [1, 2, 3]}` — 잠근 배정은 유지한 채 나머지만 재생성
 - **시간표 임시 저장 (Draft & Optimistic Locking)**: `POST /api/v1/timetables/{id}/draft`
     - `body`: `{"version": 1, "assignments": [...]}`
-- **시간표 최종 확정**: `POST /api/v1/timetables/{id}/confirm`
+- **시간표 최종 확정**: `POST /api/v1/timetables/{id}/confirm`  ← **`/confirm/{id}` 아님**
 
 ### 3.5 조회 및 출력
 
 - **조건별 시간표 조회**: `GET /api/v1/timetables/views`
-    - `query`: `?semester_id={id}&type={room|professor|grade|department}&target_name={name}`
+    - `query`: `?type={room|professor|grade|department}&target_name={name}`
 - **파일 내보내기 (PDF/Excel)**: `GET /api/v1/timetables/{id}/export`
     - `query`: `?format={pdf|excel}`
+    - `excel`은 학부 배포 양식(이론실/실습실/교수님별/학과별 다중 시트, 연강 병합)으로 출력됩니다.
+      상세 규격은 `PROJECT_CONTEXT.md` §7 참고.
 
 ### 3.6 이력 및 로그 관리
 
 - **로그 목록 조회**: `GET /api/v1/logs`
-    - `query`: `?semester_id={id}&log_type={LOGIN|GENERATE|MODIFY}`
+    - `query`: `?log_type={LOGIN|GENERATE|MODIFY}`
     - `response`: 타임스탬프, 사용자(조교), 이벤트 타입, 상세 변경 내역(JSON) 반환.
 
 ---

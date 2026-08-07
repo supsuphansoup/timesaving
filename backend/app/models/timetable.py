@@ -22,7 +22,8 @@ class Timetable(Base):
 
     # Scoring metrics
     score: Mapped[float] = mapped_column(Float, default=0.0)
-    constraint_satisfaction_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    pref_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    fitness_rate: Mapped[float] = mapped_column(Float, default=0.0)
     conflict_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # Which generation task produced this timetable
@@ -43,12 +44,15 @@ class Assignment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     timetable_id: Mapped[int] = mapped_column(Integer, ForeignKey("timetables.id"), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(Integer, ForeignKey("courses.id"), nullable=False)
-    room_id: Mapped[int] = mapped_column(Integer, ForeignKey("rooms.id"), nullable=False)
+    # 온라인 수업(0교시)은 강의실을 쓰지 않으므로 NULL이다.
+    room_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rooms.id"), nullable=True
+    )
 
     # Day: MON | TUE | WED | THU | FRI
     day: Mapped[str] = mapped_column(String(3), nullable=False)
 
-    # Starting period (1–9)
+    # Starting period (0–9)
     start_period: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # How many consecutive periods this assignment occupies

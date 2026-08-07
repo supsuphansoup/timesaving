@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { GitCompare, CheckCircle2, Lock, Sparkles, AlertCircle, RefreshCw, Layers , Cpu} from 'lucide-react';
 import { Candidate, Room, Course, Professor } from '../types';
 import TimetableGrid from '../components/TimetableGrid';
+import LazyTimetableGrid from '../components/LazyTimetableGrid';
 import client from '../api/client';
 
 const ComparePage: React.FC = () => {
@@ -59,6 +60,8 @@ const ComparePage: React.FC = () => {
 
   
   const [activeTimetable, setActiveTimetable] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'room' | 'professor'>('room');
+  const [selectedViewId, setSelectedViewId] = useState<number | 'all'>('all');
 
   useEffect(() => {
     if (selectedCandidateId) {
@@ -73,7 +76,7 @@ const ComparePage: React.FC = () => {
 const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
   
   const sortedCandidates = [...candidates]
-    .sort((a, b) => (b.constraint_satisfaction_rate || 0) - (a.constraint_satisfaction_rate || 0))
+    .sort((a, b) => (b.pref_rate || 0) + (b.fitness_rate || 0) - ((a.pref_rate || 0) + (a.fitness_rate || 0)))
     .slice(0, 5);
 
 
@@ -83,8 +86,7 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
 
     try {
       const res = await client.post('/timetables/generate', {
-        semester_id: 1,
-        num_candidates: 5,
+        min_candidates: 5,
       });
       const taskId = res.data.task_id;
       
@@ -100,7 +102,7 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
               setSelectedCandidateId(candRes.data[0].id);
             }
             setGenerating(false);
-          } else if (status === 'INFEASIBLE' || status === 'FAILED') {
+          } else if (status === 'INFEASIBLE' || status === 'TIMEOUT' || status === 'FAILED') {
             clearInterval(interval);
             setGenerateError(statusRes.data.message || '생성 실패');
             setGenerating(false);
@@ -154,7 +156,7 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
             }
             alert(`부분 재배정 완료! (고정 수업 ${lockedIds.length}개 유지됨)`);
             setReassigning(false);
-          } else if (status === 'INFEASIBLE' || status === 'FAILED') {
+          } else if (status === 'INFEASIBLE' || status === 'TIMEOUT' || status === 'FAILED') {
             clearInterval(interval);
             alert(statusRes.data.message || '부분 재배정 실패');
             setReassigning(false);
@@ -175,7 +177,7 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
   const handleConfirmTimetable = async (candidateId: number) => {
     if (!confirm('이 추천안을 2026학년도 2학기 최종 확정 시간표로 지정하시겠습니까?')) return;
     try {
-      await client.post(`/timetables/confirm/${candidateId}`);
+      await client.post(`/timetables/${candidateId}/confirm`);
       handleRefreshCandidate();
       alert('최종 확정 시간표로 지정되었습니다!');
     } catch (err: any) {
@@ -295,10 +297,10 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                     <th className="p-3">선택</th>
-                    <th className="p-3">적합도</th>
+                    <th className="p-3">적합도 점수 (Total Score)</th>
                     <th className="p-3">상태</th>
-                    <th className="p-3">선호도 반영률 (Soft Rate)</th>
-                    <th className="p-3">만족한 Soft Constraint</th>
+                    <th className="p-3">교수 선호도 (Pref Rate)</th>
+                    <th className="p-3">시스템 쾌적도 (Fitness Rate)</th>
                     <th className="p-3">하드 제약 위반</th>
                     <th className="p-3 text-right">작업</th>
                   </tr>
@@ -324,7 +326,7 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
                           />
                         </td>
                         <td className="p-3 font-bold text-slate-800">
-                          {cand.name} ({Math.round(cand.constraint_satisfaction_rate * 100)}%)
+                          {cand.name} ({Math.round(cand.score)}점)
                         </td>
                         <td className="p-3">
                           {isConfirmed ? (
@@ -337,8 +339,8 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
                             </span>
                           )}
                         </td>
-                        <td className="p-3 font-extrabold text-blue-600">{cand.constraint_satisfaction_rate?.toFixed(1) || 0}%</td>
-                        <td className="p-3 text-emerald-600 font-semibold">0건 (정상)</td>
+                        <td className="p-3 font-extrabold text-blue-600">{Math.round((cand.pref_rate || 0) * 100)}%</td>
+                        <td className="p-3 font-extrabold text-indigo-600">{Math.round((cand.fitness_rate || 0) * 100)}%</td>
                         <td className="p-3 text-right space-x-1">
                           {!isConfirmed && (
                             <button
@@ -379,14 +381,92 @@ const activeCandidate = candidates.find((c) => c.id === selectedCandidateId);
                 </div>
               </div>
 
-              <TimetableGrid
-                assignments={(activeTimetable?.assignments || [])}
-                candidateId={activeCandidate.id}
-                rooms={rooms}
-                courses={courses}
-                professors={professors}
-                onAssignmentUpdated={handleRefreshCandidate}
-              />
+              <div className="flex items-center space-x-4 mb-4 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg w-max">
+                  <button 
+                    onClick={() => { setViewMode('room'); setSelectedViewId('all'); }}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'room' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    강의실별
+                  </button>
+                  <button 
+                    onClick={() => { setViewMode('professor'); setSelectedViewId('all'); }}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'professor' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    교수별
+                  </button>
+                </div>
+
+                {viewMode === 'room' && (
+                  <select 
+                    value={selectedViewId}
+                    onChange={(e) => setSelectedViewId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="all">전체 강의실 보기</option>
+                    {rooms.map(r => (
+                      <option key={r.id} value={r.id}>{(r as any).room_name || r.name} (수용: {r.capacity}명)</option>
+                    ))}
+                  </select>
+                )}
+
+                {viewMode === 'professor' && (
+                  <select 
+                    value={selectedViewId}
+                    onChange={(e) => setSelectedViewId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="all">전체 교수 보기</option>
+                    {professors.map(p => (
+                      <option key={p.id} value={p.id}>[{p.department}] {p.name} 교수</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="space-y-8">
+                {viewMode === 'room' && rooms.filter(r => selectedViewId === 'all' || r.id === selectedViewId).map(room => {
+                  const roomAssignments = (activeTimetable?.assignments || []).filter((a: any) => a.room_id === room.id);
+                  if (roomAssignments.length === 0) return null;
+                  return (
+                    <div key={room.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-md">{(room as any).room_name || room.name}</span>
+                        <span className="text-xs text-slate-500 font-medium">수용인원: {room.capacity}명 {(room as any).is_computer_room || room.is_computer_lab ? '(컴퓨터실)' : ''}</span>
+                      </div>
+                      <LazyTimetableGrid
+                        assignments={roomAssignments}
+                        candidateId={activeCandidate.id}
+                        rooms={rooms}
+                        courses={courses}
+                        professors={professors}
+                        onAssignmentUpdated={handleRefreshCandidate}
+                      />
+                    </div>
+                  );
+                })}
+                
+                {viewMode === 'professor' && professors.filter(p => selectedViewId === 'all' || p.id === selectedViewId).map(prof => {
+                  const profAssignments = (activeTimetable?.assignments || []).filter((a: any) => a.professor_name === prof.name);
+                  if (profAssignments.length === 0) return null;
+                  return (
+                    <div key={prof.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-1 rounded-md">{prof.name} 교수</span>
+                        <span className="text-xs text-slate-500 font-medium">{prof.department}</span>
+                      </div>
+                      <LazyTimetableGrid
+                        assignments={profAssignments}
+                        candidateId={activeCandidate.id}
+                        rooms={rooms}
+                        courses={courses}
+                        professors={professors}
+                        onAssignmentUpdated={handleRefreshCandidate}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

@@ -32,6 +32,7 @@ export interface Course {
   target_grade: number;
   class_section: string;
   weekly_hours: number;
+  online_hours?: number;
   expected_students: number;
   requires_computer: boolean;
   preferred_days: string[];
@@ -68,7 +69,8 @@ export interface Candidate {
   name?: string;
   status: string;
   score: number;
-  constraint_satisfaction_rate: number;
+  pref_rate: number;
+  fitness_rate: number;
   conflict_count: number;
   created_at: string;
   assignments: Assignment[];

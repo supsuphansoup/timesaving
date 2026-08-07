@@ -23,6 +23,7 @@ const CoursesPage: React.FC = () => {
   const [grade, setGrade] = useState<number>(1);
   const [section, setSection] = useState('');
   const [weeklyHours, setWeeklyHours] = useState<number>(3);
+  const [onlineHours, setOnlineHours] = useState<number>(0);
   const [expectedStudents, setExpectedStudents] = useState<number>(30);
   const [computerRequired, setComputerRequired] = useState<boolean>(false);
   const [fixedRoomId, setFixedRoomId] = useState<number | null>(null);
@@ -68,6 +69,7 @@ const CoursesPage: React.FC = () => {
       setGrade(course.target_grade);
       setSection(course.class_section);
       setWeeklyHours(course.weekly_hours);
+      setOnlineHours(course.online_hours ?? 0);
       setExpectedStudents(course.expected_students);
       setComputerRequired(course.requires_computer);
       setFixedRoomId(course.fixed_room_ids && course.fixed_room_ids.length > 0 ? course.fixed_room_ids[0] : null);
@@ -83,6 +85,7 @@ const CoursesPage: React.FC = () => {
       setGrade(1);
       setSection('');
       setWeeklyHours(3);
+      setOnlineHours(0);
       setExpectedStudents(30);
       setComputerRequired(false);
       setFixedRoomId(null);
@@ -106,6 +109,7 @@ const CoursesPage: React.FC = () => {
       target_grade: grade,
       class_section: section,
       weekly_hours: weeklyHours,
+      online_hours: onlineHours,
       expected_students: expectedStudents,
       requires_computer: computerRequired,
       fixed_room_ids: fixedRoomId ? [fixedRoomId] : [],
@@ -147,7 +151,7 @@ const CoursesPage: React.FC = () => {
     try {
       await client.delete('/courses/action/reset');
       alert('모든 강의 정보가 초기화되었습니다.');
-      fetchCourses();
+      fetchData();
     } catch (err: any) {
       alert(err.response?.data?.detail || '강의 정보 초기화 실패');
     }
@@ -236,7 +240,7 @@ const CoursesPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span>주당 시수 / 수강예상:</span>
                 <span className="font-semibold text-slate-900">
-                  {c.weekly_hours}시간 / {c.expected_students}명
+                  {c.weekly_hours}시간{c.online_hours ? ` (온라인 ${c.online_hours}h)` : ''} / {c.expected_students}명
                 </span>
               </div>
             </div>
@@ -326,12 +330,38 @@ const CoursesPage: React.FC = () => {
                   <input
                     type="number"
                     value={weeklyHours}
-                    onChange={(e) => setWeeklyHours(Number(e.target.value))}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setWeeklyHours(v);
+                      // 주당 시수를 줄이면 온라인 시수가 그보다 커지지 않도록 맞춘다.
+                      if (onlineHours > v) setOnlineHours(v);
+                    }}
                     required
                     min={1}
                     max={6}
                     className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    온라인 수업 시수
+                    <span className="ml-1 text-xs font-normal text-slate-500">(선택, 최대 3시간)</span>
+                  </label>
+                  <select
+                    value={onlineHours}
+                    onChange={(e) => setOnlineHours(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value={0}>없음 (전부 대면)</option>
+                    {[1, 2, 3]
+                      .filter((h) => h <= weeklyHours)
+                      .map((h) => (
+                        <option key={h} value={h}>{h}시간</option>
+                      ))}
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">
+                    온라인 수업은 0교시(08:00)에 강의실 없이 배정됩니다.
+                  </p>
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">예상 수강 인원</label>
@@ -347,7 +377,10 @@ const CoursesPage: React.FC = () => {
               </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1 mt-3">비선호 요일 (다중 선택)</label>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">
+                    불가 요일 (다중 선택)
+                    <span className="ml-1 text-xs font-normal text-rose-600">※ 절대 배정되지 않습니다</span>
+                  </label>
                   <div className="flex gap-2">
                     {['월', '화', '수', '목', '금'].map((d) => (
                       <label key={d} className="flex items-center space-x-1">
@@ -366,9 +399,12 @@ const CoursesPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1 mt-3">비선호 교시 (다중 선택)</label>
+                  <label className="block font-semibold text-slate-700 mb-1 mt-3">
+                    불가 교시 (다중 선택)
+                    <span className="ml-1 text-xs font-normal text-rose-600">※ 절대 배정되지 않습니다</span>
+                  </label>
                   <div className="flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
                       <label key={p} className="flex items-center space-x-1">
                         <input
                           type="checkbox"
@@ -406,7 +442,7 @@ const CoursesPage: React.FC = () => {
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1 mt-3">선호 교시 (다중 선택)</label>
                   <div className="flex flex-wrap gap-2">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) => (
                       <label key={p} className="flex items-center space-x-1">
                         <input
                           type="checkbox"
